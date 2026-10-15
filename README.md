@@ -38,3 +38,14 @@ release workflow are documented in the
 ## License
 
 GPL-2.0, as required for plugins that link against OBS. See [LICENSE](LICENSE).
+
+## Releasing
+
+Every merge to `main` publishes a GitHub release for the `version` in
+`buildspec.json`, with the Windows, macOS and Linux downloads attached. If that
+version was already released, the merge builds but publishes nothing, so bump
+the version in the PR that should ship. A version like `0.2.0-beta1` or
+`0.2.0-rc1` is published as a pre-release.
+
+Pushing a version tag by hand still works the way the template intended: it
+creates a draft release to review and publish yourself.
