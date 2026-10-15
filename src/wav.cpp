@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "wav.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -56,7 +57,8 @@ std::vector<uint8_t> encode_wav(const std::vector<float> &samples, uint32_t samp
 	put_le(out, data_bytes, 4);
 
 	for (float sample : samples) {
-		const float clamped = std::clamp(sample, -1.0f, 1.0f);
+		// NaN or infinity would make the int16_t cast undefined; write silence.
+		const float clamped = std::isfinite(sample) ? std::clamp(sample, -1.0f, 1.0f) : 0.0f;
 		put_le(out, static_cast<uint16_t>(static_cast<int16_t>(clamped * 32767.0f)), 2);
 	}
 

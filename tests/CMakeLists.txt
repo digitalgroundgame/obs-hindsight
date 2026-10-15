@@ -24,15 +24,17 @@ else()
   add_compile_options(-Wall -Wextra -Werror)
 endif()
 
-if(HINDSIGHT_SANITIZE)
+if(HINDSIGHT_SANITIZE AND MSVC)
+  message(FATAL_ERROR "HINDSIGHT_SANITIZE needs GCC or Clang")
+elseif(HINDSIGHT_SANITIZE)
   add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
   add_link_options(-fsanitize=address,undefined)
 endif()
 
-set(_src "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+include(../src/hindsight-core.cmake)
 
-add_library(hindsight-core STATIC "${_src}/audio-ring.cpp" "${_src}/wav.cpp")
-target_include_directories(hindsight-core PUBLIC "${_src}")
+add_library(hindsight-core STATIC ${HINDSIGHT_CORE_SOURCES})
+target_include_directories(hindsight-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 
 enable_testing()
 

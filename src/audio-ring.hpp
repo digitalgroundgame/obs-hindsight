@@ -27,21 +27,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 class AudioRing {
 public:
 	// Sets how many samples to keep and drops whatever was buffered.
-	void reset(size_t capacity);
+	void reset(std::size_t capacity);
 
-	size_t capacity() const { return samples.size(); }
-	size_t size() const { return filled; }
+	std::size_t capacity() const { return samples.size(); }
+	std::size_t size() const { return filled; }
 
 	// Mixes `frames` frames of planar audio (one array per channel, as OBS
 	// hands it over) down to mono and appends them. A null plane counts as
 	// silence.
-	void push_planar(const float *const *planes, size_t channels, size_t frames);
+	void push_planar(const float *const *planes, std::size_t channels, std::size_t frames);
 
 	// Returns the buffered audio, oldest sample first.
 	std::vector<float> snapshot() const;
 
 private:
 	std::vector<float> samples;
-	size_t write_pos = 0;
-	size_t filled = 0;
+	std::size_t write_pos = 0;
+	std::size_t filled = 0;
 };

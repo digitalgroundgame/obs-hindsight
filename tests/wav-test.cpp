@@ -19,8 +19,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "check.hpp"
 #include "wav.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -47,6 +49,8 @@ void writes_standard_header()
 {
 	const std::vector<uint8_t> wav = encode_wav({0.0f, 0.0f, 0.0f}, 48000);
 	CHECK(wav.size() == 44 + 3 * 2);
+	if (wav.size() != 44 + 3 * 2)
+		return; // the reads below would run off the end
 	CHECK(has_tag(wav, 0, "RIFF"));
 	CHECK(read_le(wav, 4, 4) == wav.size() - 8);
 	CHECK(has_tag(wav, 8, "WAVE"));
@@ -66,12 +70,16 @@ void empty_audio_is_header_only()
 {
 	const std::vector<uint8_t> wav = encode_wav({}, 44100);
 	CHECK(wav.size() == 44);
-	CHECK(read_le(wav, 40, 4) == 0);
+	if (wav.size() == 44)
+		CHECK(read_le(wav, 40, 4) == 0);
 }
 
 void converts_samples_to_16_bit()
 {
 	const std::vector<uint8_t> wav = encode_wav({0.0f, 1.0f, -1.0f, 0.5f}, 48000);
+	CHECK(wav.size() == 44 + 4 * 2);
+	if (wav.size() != 44 + 4 * 2)
+		return;
 	CHECK(sample_at(wav, 0) == 0);
 	CHECK(sample_at(wav, 1) == 32767);
 	CHECK(sample_at(wav, 2) == -32767);
@@ -81,8 +89,24 @@ void converts_samples_to_16_bit()
 void clips_loud_samples()
 {
 	const std::vector<uint8_t> wav = encode_wav({2.0f, -3.0f}, 48000);
+	CHECK(wav.size() == 44 + 2 * 2);
+	if (wav.size() != 44 + 2 * 2)
+		return;
 	CHECK(sample_at(wav, 0) == 32767);
 	CHECK(sample_at(wav, 1) == -32767);
+}
+
+void silences_non_finite_samples()
+{
+	const std::vector<uint8_t> wav = encode_wav({std::nanf(""), std::numeric_limits<float>::infinity(),
+						     -std::numeric_limits<float>::infinity()},
+						    48000);
+	CHECK(wav.size() == 44 + 3 * 2);
+	if (wav.size() != 44 + 3 * 2)
+		return;
+	CHECK(sample_at(wav, 0) == 0);
+	CHECK(sample_at(wav, 1) == 0);
+	CHECK(sample_at(wav, 2) == 0);
 }
 
 } // namespace
@@ -93,5 +117,6 @@ int main()
 	empty_audio_is_header_only();
 	converts_samples_to_16_bit();
 	clips_loud_samples();
+	silences_non_finite_samples();
 	return check::finish();
 }
