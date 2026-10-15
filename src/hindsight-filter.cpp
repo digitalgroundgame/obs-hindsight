@@ -17,6 +17,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "hindsight-filter.hpp"
+#include "audio-ring.hpp"
+#include "wav.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -45,13 +47,10 @@ struct HindsightFilter {
 	uint32_t sample_rate = 0;
 	size_t channels = 0;
 
-	// Mono mix of the source, oldest sample at write_pos once the buffer has
-	// wrapped. Guarded by lock: OBS calls filter_audio on its audio thread,
-	// while the hotkey and settings run on other threads.
+	// Mono mix of the source. Guarded by lock: OBS calls filter_audio on its
+	// audio thread, while the hotkey and settings run on other threads.
 	std::mutex lock;
-	std::vector<float> ring;
-	size_t write_pos = 0;
-	size_t filled = 0;
+	AudioRing ring;
 
 	// Stored for the next steps; the spike does not use them yet.
 	std::string claude_api_key;
@@ -63,48 +62,21 @@ struct HindsightFilter {
 std::vector<float> snapshot(HindsightFilter *filter)
 {
 	std::lock_guard<std::mutex> guard(filter->lock);
-	std::vector<float> out;
-	out.reserve(filter->filled);
-	const size_t size = filter->ring.size();
-	const size_t start = (filter->write_pos + size - filter->filled) % size;
-	for (size_t i = 0; i < filter->filled; i++)
-		out.push_back(filter->ring[(start + i) % size]);
-	return out;
+	return filter->ring.snapshot();
 }
 
-void write_le(FILE *file, uint32_t value, int bytes)
-{
-	for (int i = 0; i < bytes; i++)
-		fputc((value >> (8 * i)) & 0xff, file);
-}
-
-// Writes 16-bit mono PCM, which any audio player opens.
 bool write_wav(const std::string &path, const std::vector<float> &samples, uint32_t sample_rate)
 {
+	if (!wav_fits(samples.size()))
+		return false;
+	const std::vector<uint8_t> bytes = encode_wav(samples, sample_rate);
+
 	FILE *file = os_fopen(path.c_str(), "wb");
 	if (!file)
 		return false;
 
-	const uint32_t data_bytes = static_cast<uint32_t>(samples.size() * 2);
-	fwrite("RIFF", 1, 4, file);
-	write_le(file, 36 + data_bytes, 4);
-	fwrite("WAVEfmt ", 1, 8, file);
-	write_le(file, 16, 4);              // fmt chunk size
-	write_le(file, 1, 2);               // PCM
-	write_le(file, 1, 2);               // mono
-	write_le(file, sample_rate, 4);     // sample rate
-	write_le(file, sample_rate * 2, 4); // byte rate
-	write_le(file, 2, 2);               // block align
-	write_le(file, 16, 2);              // bits per sample
-	fwrite("data", 1, 4, file);
-	write_le(file, data_bytes, 4);
-
-	for (float sample : samples) {
-		const float clamped = std::clamp(sample, -1.0f, 1.0f);
-		write_le(file, static_cast<uint16_t>(static_cast<int16_t>(clamped * 32767.0f)), 2);
-	}
-
-	return fclose(file) == 0;
+	const bool written = fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
+	return fclose(file) == 0 && written;
 }
 
 std::string clip_path()
@@ -176,11 +148,8 @@ void update(void *data, obs_data_t *settings)
 	filter->discord_bot_token = obs_data_get_string(settings, "discord_bot_token");
 	filter->discord_user_id = obs_data_get_string(settings, "discord_user_id");
 
-	if (filter->ring.size() != size) {
-		filter->ring.assign(size, 0.0f);
-		filter->write_pos = 0;
-		filter->filled = 0;
-	}
+	if (filter->ring.capacity() != size)
+		filter->ring.reset(size);
 }
 
 void *create(obs_data_t *settings, obs_source_t *source)
@@ -213,19 +182,7 @@ obs_audio_data *filter_audio(void *data, obs_audio_data *audio)
 	float **planes = reinterpret_cast<float **>(audio->data);
 
 	std::lock_guard<std::mutex> guard(filter->lock);
-	const size_t size = filter->ring.size();
-	if (size == 0 || filter->channels == 0)
-		return audio;
-
-	for (uint32_t frame = 0; frame < audio->frames; frame++) {
-		float sum = 0.0f;
-		for (size_t ch = 0; ch < filter->channels; ch++)
-			sum += planes[ch] ? planes[ch][frame] : 0.0f;
-
-		filter->ring[filter->write_pos] = sum / static_cast<float>(filter->channels);
-		filter->write_pos = (filter->write_pos + 1) % size;
-		filter->filled = std::min(filter->filled + 1, size);
-	}
+	filter->ring.push_planar(planes, filter->channels, audio->frames);
 
 	// The audio passes through untouched; Hindsight only listens.
 	return audio;

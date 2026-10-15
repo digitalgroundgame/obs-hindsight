@@ -35,6 +35,28 @@ release workflow are documented in the
 | Windows, macOS | CMake 3.30.5        |
 | Ubuntu 24.04 | CMake 3.28.3, `ninja-build`, `pkg-config`, `build-essential` |
 
+## Checks
+
+Every pull request runs these on GitHub Actions:
+
+- **Builds** on Windows, macOS and Ubuntu with warnings treated as errors.
+- **Formatting** with clang-format (C/C++) and gersemi (CMake).
+- **Unit tests** for the code that does not need OBS (the audio buffer and the
+  WAV encoder), once plain and once under AddressSanitizer and
+  UndefinedBehaviorSanitizer, which catch memory bugs and undefined behavior.
+- **clang-tidy**, with the bug-finding rules listed in [.clang-tidy](.clang-tidy).
+
+To run the unit tests locally (no OBS needed):
+
+```sh
+cmake -S tests -B build_tests
+cmake --build build_tests
+ctest --test-dir build_tests --output-on-failure
+```
+
+Code that OBS does not need to run, like the audio buffer, goes in its own
+file under `src/` without OBS includes, so it can be tested this way.
+
 ## License
 
 GPL-2.0, as required for plugins that link against OBS. See [LICENSE](LICENSE).

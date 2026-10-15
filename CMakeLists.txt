@@ -34,6 +34,11 @@ if(ENABLE_QT)
   )
 endif()
 
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.cpp src/hindsight-filter.cpp src/hindsight-filter.hpp)
+include(src/hindsight-core.cmake)
+
+target_sources(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE src/plugin-main.cpp src/hindsight-filter.cpp src/hindsight-filter.hpp ${HINDSIGHT_CORE_SOURCES}
+)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
