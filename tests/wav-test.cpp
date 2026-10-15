@@ -96,11 +96,18 @@ void clips_loud_samples()
 	CHECK(sample_at(wav, 1) == -32767);
 }
 
-void max_samples_fit_the_header()
+void refuses_more_than_fits_the_header()
 {
 	// The RIFF size field holds 36 + 2 bytes per sample in 32 bits.
 	CHECK(36 + 2 * static_cast<uint64_t>(kMaxWavSamples) <= UINT32_MAX);
 	CHECK(36 + 2 * static_cast<uint64_t>(kMaxWavSamples + 1) > UINT32_MAX);
+
+	// encode_wav uses wav_fits to refuse; a real vector that big is too much
+	// memory for a test, so check the cut-off itself.
+	CHECK(wav_fits(0));
+	CHECK(wav_fits(30 * 48000));
+	CHECK(wav_fits(kMaxWavSamples));
+	CHECK(!wav_fits(kMaxWavSamples + 1));
 }
 
 void silences_non_finite_samples()
@@ -125,6 +132,6 @@ int main()
 	converts_samples_to_16_bit();
 	clips_loud_samples();
 	silences_non_finite_samples();
-	max_samples_fit_the_header();
+	refuses_more_than_fits_the_header();
 	return check::finish();
 }

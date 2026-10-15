@@ -26,9 +26,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // over 12 hours at 48 kHz, far past Hindsight's 30 s window.
 constexpr std::size_t kMaxWavSamples = (UINT32_MAX - 36) / 2;
 
+// Whether this many samples fit in one WAV file. Check it before encoding.
+constexpr bool wav_fits(std::size_t samples)
+{
+	return samples <= kMaxWavSamples;
+}
+
 // Encodes mono samples in [-1, 1] as a 16-bit PCM WAV file, which any audio
 // player opens. Samples outside that range are clipped, and NaN or infinite
-// samples become silence. Returns an empty vector, writing nothing, if there
-// are more than kMaxWavSamples samples. Kept free of OBS so the tests can run
+// samples become silence. If wav_fits() is false for the samples, returns an
+// empty vector instead, which is not a valid WAV file. Kept free of OBS so the tests can run
 // it on its own.
 std::vector<uint8_t> encode_wav(const std::vector<float> &samples, uint32_t sample_rate);

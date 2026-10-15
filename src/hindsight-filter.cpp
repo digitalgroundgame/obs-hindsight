@@ -67,9 +67,9 @@ std::vector<float> snapshot(HindsightFilter *filter)
 
 bool write_wav(const std::string &path, const std::vector<float> &samples, uint32_t sample_rate)
 {
-	const std::vector<uint8_t> bytes = encode_wav(samples, sample_rate);
-	if (bytes.empty())
+	if (!wav_fits(samples.size()))
 		return false;
+	const std::vector<uint8_t> bytes = encode_wav(samples, sample_rate);
 
 	FILE *file = os_fopen(path.c_str(), "wb");
 	if (!file)

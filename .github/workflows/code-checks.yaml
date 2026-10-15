@@ -48,7 +48,8 @@ jobs:
 
       - name: Install Dependencies 🛍️
         run: |
-          # Same packages the template's Ubuntu build installs (.github/scripts/utils.zsh/setup_ubuntu).
+          # The libobs packages from the template's Ubuntu build
+          # (.github/scripts/utils.zsh/setup_ubuntu), plus the clang tools.
           sudo add-apt-repository --yes ppa:obsproject/obs-studio
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y obs-studio libsimde-dev libgles2-mesa-dev ninja-build clang-18 clang-tidy-18

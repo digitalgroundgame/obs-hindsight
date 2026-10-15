@@ -100,7 +100,7 @@ invoke_formatter() {
         fi
       }
 
-      if (( ! #source_files )) source_files=(CMakeLists.txt (cmake|tests)/**/(CMakeLists.txt|*.cmake)(.N))
+      if (( ! #source_files )) source_files=(CMakeLists.txt (cmake|src|tests)/**/(CMakeLists.txt|*.cmake)(.N))
 
       check_files() {
         local -i num_failures=0

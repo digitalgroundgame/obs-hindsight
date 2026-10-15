@@ -38,13 +38,13 @@ void put_tag(std::vector<uint8_t> &out, const char *tag)
 
 std::vector<uint8_t> encode_wav(const std::vector<float> &samples, uint32_t sample_rate)
 {
-	if (samples.size() > kMaxWavSamples)
+	if (!wav_fits(samples.size()))
 		return {};
 
 	const uint32_t data_bytes = static_cast<uint32_t>(samples.size() * 2);
 
 	std::vector<uint8_t> out;
-	out.reserve(44 + data_bytes);
+	out.reserve(44 + static_cast<std::size_t>(data_bytes));
 	put_tag(out, "RIFF");
 	put_le(out, 36 + data_bytes, 4);
 	put_tag(out, "WAVE");
