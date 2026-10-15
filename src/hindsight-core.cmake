@@ -6,6 +6,10 @@ set(
   HINDSIGHT_CORE_SOURCES
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/clip-name.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/clip-name.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/task-queue.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/task-queue.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/wav.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/wav.hpp"
 )
