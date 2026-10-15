@@ -48,9 +48,10 @@ jobs:
 
       - name: Install Dependencies 🛍️
         run: |
+          # Same packages the template's Ubuntu build installs (.github/scripts/utils.zsh/setup_ubuntu).
           sudo add-apt-repository --yes ppa:obsproject/obs-studio
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y obs-studio ninja-build clang-18 clang-tidy-18
+          sudo apt-get install --no-install-recommends -y obs-studio libsimde-dev libgles2-mesa-dev ninja-build clang-18 clang-tidy-18
 
       - name: Generate Compile Commands ⚙️
         env:
