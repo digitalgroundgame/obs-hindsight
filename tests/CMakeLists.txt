@@ -35,17 +35,15 @@ include(../src/hindsight-core.cmake)
 
 add_library(hindsight-core STATIC ${HINDSIGHT_CORE_SOURCES})
 target_include_directories(hindsight-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+find_package(Qt6 REQUIRED COMPONENTS Core)
+target_link_libraries(hindsight-core PUBLIC Qt6::Core)
 if(WIN32)
   target_link_libraries(hindsight-core PUBLIC crypt32)
 endif()
 
 enable_testing()
 
-foreach(
-  _test
-  IN
-  ITEMS audio-ring-test base64-test secret-seal-test secrets-test wav-test
-)
+foreach(_test IN ITEMS audio-ring-test secret-seal-test secrets-test wav-test)
   add_executable(${_test} ${_test}.cpp)
   target_link_libraries(${_test} PRIVATE hindsight-core)
   add_test(NAME ${_test} COMMAND ${_test})

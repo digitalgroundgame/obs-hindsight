@@ -17,7 +17,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "secret-seal.hpp"
-#include "base64.hpp"
+
+#include <QByteArray>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -54,6 +55,23 @@ bool apply_seal(const std::string &in, std::string &out, bool)
 }
 #endif
 
+// Base64 comes from Qt, which the plugin already links for its settings window.
+std::string to_base64(const std::string &bytes)
+{
+	return QByteArray::fromRawData(bytes.data(), static_cast<qsizetype>(bytes.size())).toBase64().toStdString();
+}
+
+bool from_base64(const std::string &text, std::string &bytes)
+{
+	const auto decoded = QByteArray::fromBase64Encoding(
+		QByteArray::fromRawData(text.data(), static_cast<qsizetype>(text.size())),
+		QByteArray::AbortOnBase64DecodingErrors);
+	if (!decoded)
+		return false;
+	bytes = decoded.decoded.toStdString();
+	return true;
+}
+
 } // namespace
 
 std::string seal_secrets_text(const std::string &text)
@@ -61,7 +79,7 @@ std::string seal_secrets_text(const std::string &text)
 	std::string sealed;
 	if (!apply_seal(text, sealed, true))
 		return "";
-	return kScheme + base64_encode(sealed) + "\n";
+	return kScheme + to_base64(sealed) + "\n";
 }
 
 bool open_secrets_text(const std::string &contents, std::string &text)
@@ -76,5 +94,5 @@ bool open_secrets_text(const std::string &contents, std::string &text)
 		encoded.pop_back();
 
 	std::string sealed;
-	return base64_decode(encoded, sealed) && apply_seal(sealed, text, false);
+	return from_base64(encoded, sealed) && apply_seal(sealed, text, false);
 }

@@ -64,7 +64,8 @@ Every pull request runs these on GitHub Actions:
   UndefinedBehaviorSanitizer, which catch memory bugs and undefined behavior.
 - **clang-tidy**, with the bug-finding rules listed in [.clang-tidy](.clang-tidy).
 
-To run the unit tests locally (no OBS needed):
+To run the unit tests locally (no OBS needed, but Qt 6 Core is, e.g.
+`qt6-base-dev` on Ubuntu):
 
 ```sh
 cmake -S tests -B build_tests
