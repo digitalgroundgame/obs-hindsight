@@ -96,6 +96,13 @@ void clips_loud_samples()
 	CHECK(sample_at(wav, 1) == -32767);
 }
 
+void max_samples_fit_the_header()
+{
+	// The RIFF size field holds 36 + 2 bytes per sample in 32 bits.
+	CHECK(36 + 2 * static_cast<uint64_t>(kMaxWavSamples) <= UINT32_MAX);
+	CHECK(36 + 2 * static_cast<uint64_t>(kMaxWavSamples + 1) > UINT32_MAX);
+}
+
 void silences_non_finite_samples()
 {
 	const std::vector<uint8_t> wav = encode_wav({std::nanf(""), std::numeric_limits<float>::infinity(),
@@ -118,5 +125,6 @@ int main()
 	converts_samples_to_16_bit();
 	clips_loud_samples();
 	silences_non_finite_samples();
+	max_samples_fit_the_header();
 	return check::finish();
 }
