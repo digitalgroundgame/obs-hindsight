@@ -19,7 +19,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "secrets.hpp"
 
 #include <cctype>
-#include <cstddef>
 
 std::string clean_key(const std::string &key)
 {
@@ -30,40 +29,6 @@ std::string clean_key(const std::string &key)
 			cleaned.push_back(c);
 	}
 	return cleaned;
-}
-
-std::string encode_secrets(const Secrets &secrets)
-{
-	std::string text;
-	text += kClaudeApiKeyName;
-	text += '=' + clean_key(secrets.claude_api_key) + '\n';
-	text += kDiscordBotTokenName;
-	text += '=' + clean_key(secrets.discord_bot_token) + '\n';
-	return text;
-}
-
-Secrets decode_secrets(const std::string &text)
-{
-	Secrets secrets;
-	size_t start = 0;
-	while (start < text.size()) {
-		size_t end = text.find('\n', start);
-		if (end == std::string::npos)
-			end = text.size();
-		const std::string line = text.substr(start, end - start);
-		start = end + 1;
-
-		const size_t equals = line.find('=');
-		if (equals == std::string::npos)
-			continue;
-		const std::string name = clean_key(line.substr(0, equals));
-		const std::string value = clean_key(line.substr(equals + 1));
-		if (name == kClaudeApiKeyName)
-			secrets.claude_api_key = value;
-		else if (name == kDiscordBotTokenName)
-			secrets.discord_bot_token = value;
-	}
-	return secrets;
 }
 
 namespace {

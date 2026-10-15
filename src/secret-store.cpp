@@ -33,6 +33,30 @@ constexpr const char *kSecretsFile = "secrets.dat";
 std::mutex store_lock;
 Secrets store;
 
+// The sealed text is the keys as OBS settings JSON, the format OBS uses for
+// its own config.
+std::string encode_secrets(const Secrets &secrets)
+{
+	obs_data_t *data = obs_data_create();
+	obs_data_set_string(data, kClaudeApiKeyName, clean_key(secrets.claude_api_key).c_str());
+	obs_data_set_string(data, kDiscordBotTokenName, clean_key(secrets.discord_bot_token).c_str());
+	const char *json = obs_data_get_json(data);
+	std::string text = json ? json : "";
+	obs_data_release(data);
+	return text;
+}
+
+bool decode_secrets(const std::string &text, Secrets &secrets)
+{
+	obs_data_t *data = obs_data_create_from_json(text.c_str());
+	if (!data)
+		return false;
+	secrets.claude_api_key = clean_key(obs_data_get_string(data, kClaudeApiKeyName));
+	secrets.discord_bot_token = clean_key(obs_data_get_string(data, kDiscordBotTokenName));
+	obs_data_release(data);
+	return true;
+}
+
 std::string secrets_path()
 {
 	char *path = obs_module_config_path(kSecretsFile);
@@ -80,9 +104,7 @@ void secret_store_load()
 	Secrets loaded;
 	if (contents) {
 		std::string text;
-		if (open_secrets_text(contents, text))
-			loaded = decode_secrets(text);
-		else
+		if (!open_secrets_text(contents, text) || !decode_secrets(text, loaded))
 			obs_log(LOG_WARNING, "could not read the saved keys; enter them again");
 		bfree(contents);
 	}

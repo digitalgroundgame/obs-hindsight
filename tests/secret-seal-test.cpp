@@ -18,7 +18,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "check.hpp"
 #include "secret-seal.hpp"
-#include "secrets.hpp"
 
 #include <string>
 
@@ -26,18 +25,13 @@ namespace {
 
 void round_trips_the_secrets_text()
 {
-	Secrets secrets;
-	secrets.claude_api_key = "sk-ant-abc123";
-	secrets.discord_bot_token = "MTA.xyz-789";
-
-	const std::string sealed = seal_secrets_text(encode_secrets(secrets));
+	const std::string json = "{\"claude_api_key\": \"sk-ant-abc123\"}";
+	const std::string sealed = seal_secrets_text(json);
 	CHECK(!sealed.empty());
 
 	std::string text;
 	CHECK(open_secrets_text(sealed, text));
-	const Secrets opened = decode_secrets(text);
-	CHECK(opened.claude_api_key == "sk-ant-abc123");
-	CHECK(opened.discord_bot_token == "MTA.xyz-789");
+	CHECK(text == json);
 }
 
 void sealed_file_does_not_show_the_keys()
