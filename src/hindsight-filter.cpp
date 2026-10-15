@@ -124,8 +124,9 @@ void on_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 		capture(static_cast<HindsightFilter *>(data));
 }
 
-// Moves any key typed into the filter settings (or left there by an older
-// build) into the shared secret store, then removes it from the settings.
+// Keys are entered under Tools > Hindsight settings. Version 0.1.0 kept them in
+// the filter settings instead; move any found there into the shared secret
+// store, then remove them from the settings (and so the scene collection).
 void take_keys_from_settings(obs_data_t *settings)
 {
 	Secrets typed;
@@ -144,20 +145,6 @@ void take_keys_from_settings(obs_data_t *settings)
 bool on_save_clip_clicked(obs_properties_t *, obs_property_t *, void *data)
 {
 	capture(static_cast<HindsightFilter *>(data));
-	return false;
-}
-
-bool on_forget_claude_key_clicked(obs_properties_t *, obs_property_t *, void *)
-{
-	if (secret_store_forget(SecretKey::ClaudeApiKey))
-		obs_log(LOG_INFO, "forgot the saved Claude API key");
-	return false;
-}
-
-bool on_forget_discord_token_clicked(obs_properties_t *, obs_property_t *, void *)
-{
-	if (secret_store_forget(SecretKey::DiscordBotToken))
-		obs_log(LOG_INFO, "forgot the saved Discord bot token");
 	return false;
 }
 
@@ -236,13 +223,6 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_text(props, "keys_note", obs_module_text("Hindsight.KeysNote"), OBS_TEXT_INFO);
 	obs_property_text_set_info_type(keys_note, OBS_TEXT_INFO_NORMAL);
 
-	obs_properties_add_text(props, kClaudeApiKeyName, obs_module_text("Hindsight.ClaudeApiKey"), OBS_TEXT_PASSWORD);
-	obs_properties_add_text(props, kDiscordBotTokenName, obs_module_text("Hindsight.DiscordBotToken"),
-				OBS_TEXT_PASSWORD);
-	obs_properties_add_button2(props, "forget_claude_key", obs_module_text("Hindsight.ForgetClaudeKey"),
-				   on_forget_claude_key_clicked, nullptr);
-	obs_properties_add_button2(props, "forget_discord_token", obs_module_text("Hindsight.ForgetDiscordToken"),
-				   on_forget_discord_token_clicked, nullptr);
 	obs_properties_add_text(props, "discord_user_id", obs_module_text("Hindsight.DiscordUserId"), OBS_TEXT_DEFAULT);
 	obs_properties_add_int_slider(props, "window_seconds", obs_module_text("Hindsight.WindowSeconds"),
 				      kMinWindowSeconds, kMaxWindowSeconds, 1);
