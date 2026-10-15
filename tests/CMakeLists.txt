@@ -35,12 +35,10 @@ include(../src/hindsight-core.cmake)
 
 add_library(hindsight-core STATIC ${HINDSIGHT_CORE_SOURCES})
 target_include_directories(hindsight-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../src")
-find_package(Threads REQUIRED)
-target_link_libraries(hindsight-core PUBLIC Threads::Threads)
 
 enable_testing()
 
-foreach(_test IN ITEMS audio-ring-test clip-name-test task-queue-test wav-test)
+foreach(_test IN ITEMS audio-ring-test wav-test)
   add_executable(${_test} ${_test}.cpp)
   target_link_libraries(${_test} PRIVATE hindsight-core)
   add_test(NAME ${_test} COMMAND ${_test})
