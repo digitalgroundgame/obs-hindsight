@@ -38,7 +38,7 @@ target_include_directories(hindsight-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..
 
 enable_testing()
 
-foreach(_test IN ITEMS audio-ring-test wav-test)
+foreach(_test IN ITEMS audio-ring-test secrets-test wav-test)
   add_executable(${_test} ${_test}.cpp)
   target_link_libraries(${_test} PRIVATE hindsight-core)
   add_test(NAME ${_test} COMMAND ${_test})

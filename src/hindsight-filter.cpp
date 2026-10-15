@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "hindsight-filter.hpp"
 #include "audio-ring.hpp"
+#include "secrets.hpp"
 #include "wav.hpp"
 
 #include <obs-module.h>
@@ -39,6 +40,8 @@ constexpr int kDefaultWindowSeconds = 30;
 constexpr int kMinWindowSeconds = 5;
 constexpr int kMaxWindowSeconds = 30;
 
+constexpr const char *kSecretsFile = "secrets.txt";
+
 // One filter instance per source it is added to (normally just the mic).
 struct HindsightFilter {
 	obs_source_t *source = nullptr;
@@ -52,9 +55,8 @@ struct HindsightFilter {
 	std::mutex lock;
 	AudioRing ring;
 
-	// Stored for the next steps; the spike does not use them yet.
-	std::string claude_api_key;
-	std::string discord_bot_token;
+	// Loaded from the secrets file; the spike does not use them yet.
+	Secrets secrets;
 	std::string discord_user_id;
 };
 
@@ -124,9 +126,73 @@ void on_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 		capture(static_cast<HindsightFilter *>(data));
 }
 
+Secrets load_secrets()
+{
+	char *path = obs_module_config_path(kSecretsFile);
+	char *text = path ? os_quick_read_utf8_file(path) : nullptr;
+	bfree(path);
+
+	Secrets secrets = text ? decode_secrets(text) : Secrets{};
+	bfree(text);
+	return secrets;
+}
+
+// Writes through a temporary file so a crash never leaves half a file. No
+// backup copy is kept, so forgotten keys are really gone.
+bool save_secrets(const Secrets &secrets)
+{
+	char *dir = obs_module_config_path("");
+	if (dir)
+		os_mkdirs(dir);
+	bfree(dir);
+
+	char *path = obs_module_config_path(kSecretsFile);
+	const std::string text = encode_secrets(secrets);
+	const bool saved = path &&
+			   os_quick_write_utf8_file_safe(path, text.c_str(), text.size(), false, "tmp", nullptr);
+	bfree(path);
+	return saved;
+}
+
+// Moves any key typed into the filter settings (or left there by an older
+// build) into the secrets file, then removes it from the settings.
+Secrets take_keys_from_settings(obs_data_t *settings)
+{
+	Secrets stored = load_secrets();
+
+	Secrets typed;
+	typed.claude_api_key = obs_data_get_string(settings, kClaudeApiKeyName);
+	typed.discord_bot_token = obs_data_get_string(settings, kDiscordBotTokenName);
+	if (typed.claude_api_key.empty() && typed.discord_bot_token.empty())
+		return stored;
+
+	if (merge_typed_keys(stored, typed) && !save_secrets(stored)) {
+		// Leave the keys in the settings rather than lose them.
+		obs_log(LOG_ERROR, "could not save keys to %s; leaving them in the filter settings", kSecretsFile);
+		return stored;
+	}
+	obs_data_erase(settings, kClaudeApiKeyName);
+	obs_data_erase(settings, kDiscordBotTokenName);
+	return stored;
+}
+
 bool on_save_clip_clicked(obs_properties_t *, obs_property_t *, void *data)
 {
 	capture(static_cast<HindsightFilter *>(data));
+	return false;
+}
+
+bool on_forget_keys_clicked(obs_properties_t *, obs_property_t *, void *data)
+{
+	if (!save_secrets(Secrets{})) {
+		obs_log(LOG_ERROR, "could not clear %s", kSecretsFile);
+		return false;
+	}
+
+	auto *filter = static_cast<HindsightFilter *>(data);
+	std::lock_guard<std::mutex> guard(filter->lock);
+	filter->secrets = Secrets{};
+	obs_log(LOG_INFO, "forgot the saved keys");
 	return false;
 }
 
@@ -143,9 +209,10 @@ void update(void *data, obs_data_t *settings)
 				       kMinWindowSeconds, kMaxWindowSeconds);
 	const size_t size = static_cast<size_t>(seconds) * filter->sample_rate;
 
+	Secrets secrets = take_keys_from_settings(settings);
+
 	std::lock_guard<std::mutex> guard(filter->lock);
-	filter->claude_api_key = obs_data_get_string(settings, "claude_api_key");
-	filter->discord_bot_token = obs_data_get_string(settings, "discord_bot_token");
+	filter->secrets = std::move(secrets);
 	filter->discord_user_id = obs_data_get_string(settings, "discord_user_id");
 
 	if (filter->ring.capacity() != size)
@@ -201,9 +268,15 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
 	obs_property_text_set_info_type(note, OBS_TEXT_INFO_NORMAL);
 
-	obs_properties_add_text(props, "claude_api_key", obs_module_text("Hindsight.ClaudeApiKey"), OBS_TEXT_PASSWORD);
-	obs_properties_add_text(props, "discord_bot_token", obs_module_text("Hindsight.DiscordBotToken"),
+	obs_property_t *keys_note =
+		obs_properties_add_text(props, "keys_note", obs_module_text("Hindsight.KeysNote"), OBS_TEXT_INFO);
+	obs_property_text_set_info_type(keys_note, OBS_TEXT_INFO_NORMAL);
+
+	obs_properties_add_text(props, kClaudeApiKeyName, obs_module_text("Hindsight.ClaudeApiKey"), OBS_TEXT_PASSWORD);
+	obs_properties_add_text(props, kDiscordBotTokenName, obs_module_text("Hindsight.DiscordBotToken"),
 				OBS_TEXT_PASSWORD);
+	obs_properties_add_button2(props, "forget_keys", obs_module_text("Hindsight.ForgetKeys"),
+				   on_forget_keys_clicked, data);
 	obs_properties_add_text(props, "discord_user_id", obs_module_text("Hindsight.DiscordUserId"), OBS_TEXT_DEFAULT);
 	obs_properties_add_int_slider(props, "window_seconds", obs_module_text("Hindsight.WindowSeconds"),
 				      kMinWindowSeconds, kMaxWindowSeconds, 1);

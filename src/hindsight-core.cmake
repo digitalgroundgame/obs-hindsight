@@ -6,6 +6,8 @@ set(
   HINDSIGHT_CORE_SOURCES
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/secrets.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/secrets.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/wav.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/wav.hpp"
 )
