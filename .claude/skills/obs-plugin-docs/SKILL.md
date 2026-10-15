@@ -128,6 +128,11 @@ https://github.com/obsproject/obs-studio/blob/31.1.1/libobs/obs-hotkey.h
 - `os_fopen`, `os_mkdirs` and other portable file helpers:
   https://docs.obsproject.com/reference-libobs-util-platform
 
+## Related skills
+
+For the rest of the pipeline, load `whisper-docs` (transcription),
+`claude-api-docs` (asking Claude) and `discord-api-docs` (sending the answer).
+
 ## When you change plugin code
 
 - Name the doc page or header you checked in the PR description for any new
