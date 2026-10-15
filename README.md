@@ -6,7 +6,19 @@ transcribes the last 30 seconds of their mic on the PC, asks Claude, and posts
 the answer to Discord.
 
 Design plan: [#1](https://github.com/digitalgroundgame/obs-hindsight/issues/1).
-Nothing beyond the plugin skeleton is built yet.
+
+## Trying the current build
+
+This is an early test build. It does not transcribe, call Claude or message
+Discord yet; it proves the audio capture.
+
+1. Install the plugin and restart OBS.
+2. Open your mic's **Filters**, add **Hindsight**, and close the window.
+3. In **Settings > Hotkeys**, bind "Hindsight: answer the last question".
+4. Talk for a bit, then press the hotkey (or click **Save the last clip now**
+   in the filter's settings).
+5. **Help > Log Files > View Current Log** shows where the WAV was saved. Play
+   it back: it should be the last 30 seconds of your mic.
 
 ## Building
 
