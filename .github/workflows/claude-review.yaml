@@ -3,10 +3,13 @@ on:
   # Reviews once per PR to keep cost down. To re-review after new pushes,
   # comment "@claude review this PR again" (handled by claude.yaml).
   pull_request:
+    paths-ignore:
+      - '**.md'
+    branches: [main]
     types: [opened, ready_for_review]
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   review:
     name: Review pull request
@@ -20,31 +23,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
 
       - uses: anthropics/claude-code-action@v1
         with:
-          # Set one of these two repository secrets; the other can stay unset.
+          # Set only one of these two repository secrets.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review this pull request. The PR branch is already checked out in the working directory.
-
-            This repo is Hindsight, a native OBS Studio plugin in C++ built from obsproject/obs-plugintemplate.
-            Windows is the platform that must work. Most of the team is new to C++, so explain any issue
-            you flag in plain terms and say how to fix it.
-
-            Focus on, in order:
-            - Bugs: memory and lifetime errors, use after free, leaks, data races between OBS audio
-              callbacks and the UI thread, unchecked return values, integer overflow in buffer math
-            - OBS API misuse: missing bfree/obs_data_release/obs_source_release, work done on the audio
-              thread that should not be, hotkey or settings registration that leaks or double-registers
-            - Secrets: API keys or tokens logged, written to disk unencrypted, or sent anywhere unexpected
-            - CMake and CI changes that would break the Windows build or release
-            Skip style nits that clang-format already enforces.
+            Review this pull request. The PR's head commit is checked out in the working directory.
+            Read .github/claude-review.md first and follow it.
 
             Use `mcp__github_inline_comment__create_inline_comment` (with `confirmed: true`) for issues tied to
             specific lines. Finish with one `gh pr comment` summarising the review, or saying it looks good.
