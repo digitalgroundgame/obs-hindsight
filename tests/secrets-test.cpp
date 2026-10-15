@@ -111,6 +111,22 @@ void merge_reports_no_change_for_the_same_key()
 	CHECK(!merge_typed_keys(stored, typed));
 }
 
+void forgets_one_key()
+{
+	Secrets secrets;
+	secrets.claude_api_key = "sk-keep";
+	secrets.discord_bot_token = "tok-drop";
+
+	CHECK(forget_key(secrets, SecretKey::DiscordBotToken));
+	CHECK(secrets.claude_api_key == "sk-keep");
+	CHECK(secrets.discord_bot_token.empty());
+
+	// Forgetting an empty key reports that nothing changed.
+	CHECK(!forget_key(secrets, SecretKey::DiscordBotToken));
+	CHECK(forget_key(secrets, SecretKey::ClaudeApiKey));
+	CHECK(secrets.claude_api_key.empty());
+}
+
 } // namespace
 
 int main()
@@ -124,5 +140,6 @@ int main()
 	merge_takes_typed_keys();
 	merge_keeps_saved_keys_for_blank_fields();
 	merge_reports_no_change_for_the_same_key();
+	forgets_one_key();
 	return check::finish();
 }

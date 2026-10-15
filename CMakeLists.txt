@@ -38,7 +38,18 @@ include(src/hindsight-core.cmake)
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin-main.cpp src/hindsight-filter.cpp src/hindsight-filter.hpp ${HINDSIGHT_CORE_SOURCES}
+  PRIVATE
+    src/plugin-main.cpp
+    src/hindsight-filter.cpp
+    src/hindsight-filter.hpp
+    src/secret-store.cpp
+    src/secret-store.hpp
+    ${HINDSIGHT_CORE_SOURCES}
 )
+
+# DPAPI, which secret-seal.cpp uses to encrypt the saved keys.
+if(WIN32)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32)
+endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

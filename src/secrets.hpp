@@ -23,8 +23,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // The keys Hindsight needs. They live in their own file in the plugin's config
 // folder, never in the filter settings, because OBS saves filter settings into
 // the scene collection and streamers export and share those. Kept free of OBS
-// so the tests can run it on its own; the filter does the file reading and
-// writing.
+// so the tests can run it on its own; secret-store.cpp does the file reading
+// and writing, and secret-seal.cpp encrypts the file.
 struct Secrets {
 	std::string claude_api_key;
 	std::string discord_bot_token;
@@ -38,7 +38,10 @@ constexpr const char *kDiscordBotTokenName = "discord_bot_token";
 // often carry a stray space or newline.
 std::string clean_key(const std::string &key);
 
-// One "name=value" line per key.
+// Which key, for forgetting one at a time.
+enum class SecretKey { ClaudeApiKey, DiscordBotToken };
+
+// One "name=value" line per key. This is the text inside the sealed file.
 std::string encode_secrets(const Secrets &secrets);
 
 // Reads what encode_secrets wrote. Blank lines, unknown names and lines with
@@ -49,3 +52,6 @@ Secrets decode_secrets(const std::string &text);
 // fields so an empty box never erases a saved key. Returns whether anything
 // changed.
 bool merge_typed_keys(Secrets &stored, const Secrets &typed);
+
+// Clears one key. Returns whether it held anything.
+bool forget_key(Secrets &secrets, SecretKey key);
