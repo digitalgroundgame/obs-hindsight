@@ -12,6 +12,10 @@ Focus on, in order:
   thread that should not be, hotkey or settings registration that leaks or double-registers
 - Secrets: API keys or tokens logged, written to disk unencrypted, or sent anywhere unexpected
 - CMake and CI changes that would break the Windows build or release
+- Structure: discrete, reusable logic (secret storage, HTTP calls, parsing, buffer math) that is
+  written inline in plugin or OBS callback code. Ask for it to move into its own `src/*.cpp`/`.hpp`
+  with no OBS dependency, listed in `src/hindsight-core.cmake`, with a unit test under `tests/`.
+  Also flag new OBS-free code that arrives without tests.
 
 Skip style nits that clang-format already enforces.
 
