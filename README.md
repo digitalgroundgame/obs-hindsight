@@ -7,12 +7,30 @@ the answer to Discord.
 
 Design plan: [#1](https://github.com/digitalgroundgame/obs-hindsight/issues/1).
 
+## Installing
+
+Windows, OBS 31.1 or newer:
+
+1. Download `obs-hindsight-<version>-windows-x64.zip` from the
+   [latest release](https://github.com/digitalgroundgame/obs-hindsight/releases/latest).
+2. Close OBS.
+3. Extract the zip. It holds one folder, `obs-hindsight`.
+4. Move that folder into `C:\ProgramData\obs-studio\plugins\` (create
+   `plugins` if it does not exist). You should end up with
+   `C:\ProgramData\obs-studio\plugins\obs-hindsight\bin\64bit\obs-hindsight.dll`.
+   `ProgramData` is hidden by default; paste the path into the Explorer
+   address bar to get there.
+5. Start OBS. **Help > Log Files > View Current Log** should contain
+   `[obs-hindsight] plugin loaded successfully`.
+
+To update, replace the folder with the new one. To uninstall, delete it.
+
 ## Trying the current build
 
 This is an early test build. It does not transcribe, call Claude or message
 Discord yet; it proves the audio capture.
 
-1. Install the plugin and restart OBS.
+1. [Install the plugin](#installing).
 2. Open your mic's **Filters**, add **Hindsight**, and close the window.
 3. In **Settings > Hotkeys**, bind "Hindsight: answer the last question".
 4. Talk for a bit, then press the hotkey (or click **Save the last clip now**
