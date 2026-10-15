@@ -58,11 +58,23 @@ struct HindsightFilter {
 	std::string discord_user_id;
 };
 
-// Returns the buffered audio, oldest sample first.
+// Returns the buffered audio, oldest sample first. filter_audio needs the
+// same lock on OBS's audio thread, so the few megabytes are allocated before
+// taking it and the lock is held only for the copy.
 std::vector<float> snapshot(HindsightFilter *filter)
 {
+	size_t capacity = 0;
+	{
+		std::lock_guard<std::mutex> guard(filter->lock);
+		capacity = filter->ring.capacity();
+	}
+
+	std::vector<float> out;
+	out.reserve(capacity);
+
 	std::lock_guard<std::mutex> guard(filter->lock);
-	return filter->ring.snapshot();
+	filter->ring.copy_to(out);
+	return out;
 }
 
 bool write_wav(const std::string &path, const std::vector<float> &samples, uint32_t sample_rate)
