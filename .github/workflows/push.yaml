@@ -18,6 +18,13 @@ jobs:
     permissions:
       contents: read
 
+  code-checks:
+    name: Code Checks 🧪
+    if: github.ref_name == 'master' || github.ref_name == 'main'
+    uses: ./.github/workflows/code-checks.yaml
+    permissions:
+      contents: read
+
   build-project:
     name: Build Project 🧱
     uses: ./.github/workflows/build-project.yaml
@@ -27,9 +34,14 @@ jobs:
 
   create-release:
     name: Create Release 🛫
-    if: github.ref_type == 'tag' || github.ref_name == 'main'
+    # A merge to main only releases once formatting, unit tests and
+    # clang-tidy pass. Those jobs are skipped on tag pushes, so a tag needs
+    # only the build.
+    if: >-
+      !cancelled() && needs.build-project.result == 'success' && (github.ref_type == 'tag' ||
+      (github.ref_name == 'main' && needs.check-format.result == 'success' && needs.code-checks.result == 'success'))
     runs-on: ubuntu-24.04
-    needs: build-project
+    needs: [check-format, code-checks, build-project]
     defaults:
       run:
         shell: bash
