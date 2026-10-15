@@ -1,0 +1,51 @@
+name: Upstream Check
+on:
+  schedule:
+    - cron: '0 14 1 * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  check:
+    name: Check for template and OBS updates 🔎
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare against upstream 🔍
+        id: compare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          : Compare against upstream 🔍
+          set -euo pipefail
+
+          template_base=$(tr -d '[:space:]' < .github/template-version)
+          template_head=$(gh api repos/obsproject/obs-plugintemplate/commits/master --jq .sha)
+          obs_pinned=$(jq -r '.dependencies["obs-studio"].version' buildspec.json)
+          obs_latest=$(gh api repos/obsproject/obs-studio/releases/latest --jq .tag_name)
+
+          body=''
+          if [[ "${template_base}" != "${template_head}" ]]; then
+            body+="- **Plugin template** has new commits: https://github.com/obsproject/obs-plugintemplate/compare/${template_base}...${template_head}"$'\n'
+            body+="  To apply: run \`git diff ${template_base} ${template_head} > template.patch\` in a template checkout, then \`git apply -3 template.patch\` here, and set \`.github/template-version\` to ${template_head}."$'\n'
+          fi
+          # Patch releases rarely matter for plugins, so only flag a new major or minor.
+          if [[ "$(cut -d. -f1-2 <<< "${obs_pinned}")" != "$(cut -d. -f1-2 <<< "${obs_latest}")" ]]; then
+            body+="- **OBS Studio ${obs_latest}** is out; \`buildspec.json\` pins ${obs_pinned}: https://github.com/obsproject/obs-studio/releases/tag/${obs_latest}"$'\n'
+            body+="  Bumping it needs new dependency hashes and a test build."$'\n'
+          fi
+
+          if [[ -z "${body}" ]]; then
+            echo "Template and OBS are both current."
+            exit 0
+          fi
+
+          title='Upstream update available'
+          existing=$(gh issue list --state open --search "in:title \"${title}\"" --json number --jq '.[0].number // empty')
+          if [[ -n "${existing}" ]]; then
+            gh issue comment "${existing}" --body "Still pending as of $(date -u +%F):"$'\n\n'"${body}"
+          else
+            gh issue create --title "${title}" --body "Found by the monthly upstream check:"$'\n\n'"${body}"
+          fi
