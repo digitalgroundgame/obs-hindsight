@@ -31,6 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -155,13 +156,25 @@ void update(void *data, obs_data_t *settings)
 				       kMinWindowSeconds, kMaxWindowSeconds);
 	const size_t size = static_cast<size_t>(seconds) * filter->sample_rate;
 
+	// A resized ring is a few megabytes. Build it before taking the lock the
+	// audio thread waits on; the old one is freed with `resized` after the
+	// lock is released.
+	bool resize = false;
+	{
+		std::lock_guard<std::mutex> guard(filter->lock);
+		resize = filter->ring.capacity() != size;
+	}
+	AudioRing resized;
+	if (resize)
+		resized.reset(size);
+
 	std::lock_guard<std::mutex> guard(filter->lock);
 	filter->claude_api_key = obs_data_get_string(settings, "claude_api_key");
 	filter->discord_bot_token = obs_data_get_string(settings, "discord_bot_token");
 	filter->discord_user_id = obs_data_get_string(settings, "discord_user_id");
 
-	if (filter->ring.capacity() != size)
-		filter->ring.reset(size);
+	if (resize && filter->ring.capacity() != size)
+		std::swap(filter->ring, resized);
 }
 
 void *create(obs_data_t *settings, obs_source_t *source)
