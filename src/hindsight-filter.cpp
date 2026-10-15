@@ -126,17 +126,18 @@ void on_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 
 // Keys are entered under Tools > Hindsight settings. Version 0.1.0 kept them in
 // the filter settings instead; move any found there into the shared secret
-// store, then remove them from the settings (and so the scene collection).
+// store (unless a key is already saved there), then remove them from the
+// settings and so from the scene collection.
 void take_keys_from_settings(obs_data_t *settings)
 {
-	Secrets typed;
-	typed.claude_api_key = obs_data_get_string(settings, kClaudeApiKeyName);
-	typed.discord_bot_token = obs_data_get_string(settings, kDiscordBotTokenName);
-	if (typed.claude_api_key.empty() && typed.discord_bot_token.empty())
+	Secrets old;
+	old.claude_api_key = obs_data_get_string(settings, kClaudeApiKeyName);
+	old.discord_bot_token = obs_data_get_string(settings, kDiscordBotTokenName);
+	if (old.claude_api_key.empty() && old.discord_bot_token.empty())
 		return;
 
 	// Leave the keys in the settings rather than lose them.
-	if (!secret_store_save_typed(typed))
+	if (!secret_store_take_old_keys(old))
 		return;
 	obs_data_erase(settings, kClaudeApiKeyName);
 	obs_data_erase(settings, kDiscordBotTokenName);

@@ -23,6 +23,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 #include <util/platform.h>
 
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
+
 #include <mutex>
 #include <string>
 
@@ -84,8 +88,14 @@ bool write_secrets(const Secrets &secrets)
 		obs_log(LOG_ERROR, "could not encrypt the keys");
 		return false;
 	}
-	if (os_quick_write_utf8_file_safe(path.c_str(), contents.c_str(), contents.size(), false, "tmp", nullptr))
+	if (os_quick_write_utf8_file_safe(path.c_str(), contents.c_str(), contents.size(), false, "tmp", nullptr)) {
+#ifndef _WIN32
+		// Only Windows gets encryption, so elsewhere at least keep other
+		// users on the machine from reading the file.
+		chmod(path.c_str(), S_IRUSR | S_IWUSR);
+#endif
 		return true;
+	}
 
 	// libobs leaves the temporary file behind when the final replace fails
 	// (say, antivirus has the file open). Don't leave the keys lying there.
@@ -126,15 +136,21 @@ bool secret_store_save_typed(const Secrets &typed)
 	if (!merge_typed_keys(updated, typed))
 		return true;
 
-	// Moving keys from an older build's filter settings can meet a different
-	// key already saved (two filters, two keys). Say which one now applies.
-	if (!store.claude_api_key.empty() && updated.claude_api_key != store.claude_api_key)
-		obs_log(LOG_INFO, "replaced the saved Claude API key");
-	if (!store.discord_bot_token.empty() && updated.discord_bot_token != store.discord_bot_token)
-		obs_log(LOG_INFO, "replaced the saved Discord bot token");
-
 	if (!write_secrets(updated))
 		return false;
+	store = updated;
+	return true;
+}
+
+bool secret_store_take_old_keys(const Secrets &old)
+{
+	std::lock_guard<std::mutex> guard(store_lock);
+	Secrets updated = store;
+	if (!fill_empty_keys(updated, old))
+		return true;
+	if (!write_secrets(updated))
+		return false;
+	obs_log(LOG_INFO, "moved keys from the filter settings into Tools > Hindsight settings");
 	store = updated;
 	return true;
 }

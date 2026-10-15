@@ -35,5 +35,9 @@ Secrets secret_store_get();
 // which case the stored keys are unchanged.
 bool secret_store_save_typed(const Secrets &typed);
 
+// Saves keys found in 0.1.0's filter settings, but only into empty slots
+// (see fill_empty_keys). Returns false if the file could not be written.
+bool secret_store_take_old_keys(const Secrets &old);
+
 // Clears one key and saves. Returns false if the file could not be written.
 bool secret_store_forget(SecretKey key);

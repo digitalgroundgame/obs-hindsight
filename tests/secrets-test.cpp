@@ -64,6 +64,23 @@ void merge_reports_no_change_for_the_same_key()
 	CHECK(!merge_typed_keys(stored, typed));
 }
 
+void old_keys_fill_only_empty_slots()
+{
+	Secrets stored;
+	stored.claude_api_key = "sk-new";
+	Secrets old;
+	old.claude_api_key = "sk-old";
+	old.discord_bot_token = " tok-old\n";
+
+	CHECK(fill_empty_keys(stored, old));
+	CHECK(stored.claude_api_key == "sk-new");
+	CHECK(stored.discord_bot_token == "tok-old");
+
+	// Nothing left to fill.
+	CHECK(!fill_empty_keys(stored, old));
+	CHECK(!fill_empty_keys(stored, Secrets{}));
+}
+
 void forgets_one_key()
 {
 	Secrets secrets;
@@ -88,6 +105,7 @@ int main()
 	merge_takes_typed_keys();
 	merge_keeps_saved_keys_for_blank_fields();
 	merge_reports_no_change_for_the_same_key();
+	old_keys_fill_only_empty_slots();
 	forgets_one_key();
 	return check::finish();
 }

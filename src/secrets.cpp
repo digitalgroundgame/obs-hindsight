@@ -44,6 +44,16 @@ bool merge_one(std::string &stored, const std::string &typed)
 
 } // namespace
 
+bool fill_empty_keys(Secrets &stored, const Secrets &old)
+{
+	bool changed = false;
+	if (stored.claude_api_key.empty())
+		changed |= merge_one(stored.claude_api_key, old.claude_api_key);
+	if (stored.discord_bot_token.empty())
+		changed |= merge_one(stored.discord_bot_token, old.discord_bot_token);
+	return changed;
+}
+
 bool forget_key(Secrets &secrets, SecretKey key)
 {
 	std::string &value = key == SecretKey::ClaudeApiKey ? secrets.claude_api_key : secrets.discord_bot_token;

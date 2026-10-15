@@ -46,5 +46,10 @@ enum class SecretKey { ClaudeApiKey, DiscordBotToken };
 // changed.
 bool merge_typed_keys(Secrets &stored, const Secrets &typed);
 
+// Copies keys from 0.1.0's filter settings into slots that are still empty.
+// A key already saved wins, so an old scene collection never replaces a key
+// entered since. Returns whether anything changed.
+bool fill_empty_keys(Secrets &stored, const Secrets &old);
+
 // Clears one key. Returns whether it held anything.
 bool forget_key(Secrets &secrets, SecretKey key);

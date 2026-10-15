@@ -84,12 +84,16 @@ void open_settings_dialog(void *)
 	show_saved_state(discord, !saved.discord_bot_token.empty());
 
 	QObject::connect(claude.forget, &QPushButton::clicked, &dialog, [claude]() {
-		if (secret_store_forget(SecretKey::ClaudeApiKey))
+		if (secret_store_forget(SecretKey::ClaudeApiKey)) {
+			claude.edit->clear();
 			show_saved_state(claude, false);
+		}
 	});
 	QObject::connect(discord.forget, &QPushButton::clicked, &dialog, [discord]() {
-		if (secret_store_forget(SecretKey::DiscordBotToken))
+		if (secret_store_forget(SecretKey::DiscordBotToken)) {
+			discord.edit->clear();
 			show_saved_state(discord, false);
+		}
 	});
 
 	auto *error = new QLabel(QString::fromUtf8(obs_module_text("Hindsight.SaveFailed")), &dialog);
