@@ -4,6 +4,8 @@
 
 set(
   HINDSIGHT_CORE_SOURCES
+  "${CMAKE_CURRENT_LIST_DIR}/audio-freshness.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/audio-freshness.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/wav.cpp"
