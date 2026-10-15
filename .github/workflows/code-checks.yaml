@@ -1,0 +1,66 @@
+name: Code Checks
+run-name: ${{ github.event.pull_request.title || github.ref_name }} code checks 🧪
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main]
+  pull_request:
+    paths-ignore:
+      - '**.md'
+    branches: [master, main]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  cancel-in-progress: true
+jobs:
+  unit-tests:
+    name: Unit Tests 🧪 (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: plain
+            sanitize: 'OFF'
+          - name: ASan + UBSan
+            sanitize: 'ON'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Tests 🧱
+        run: |
+          cmake -S tests -B build_tests -DCMAKE_BUILD_TYPE=Debug -DHINDSIGHT_SANITIZE=${{ matrix.sanitize }}
+          cmake --build build_tests --parallel
+
+      - name: Run Tests 🧪
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build_tests --output-on-failure
+
+  clang-tidy:
+    name: clang-tidy 🔬
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies 🛍️
+        run: |
+          sudo add-apt-repository --yes ppa:obsproject/obs-studio
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y obs-studio ninja-build clang-18 clang-tidy-18
+
+      - name: Generate Compile Commands ⚙️
+        env:
+          CC: clang-18
+          CXX: clang++-18
+        run: |
+          cmake --preset ubuntu-x86_64 -B build_tidy -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake -S tests -B build_tests
+
+      - name: Run clang-tidy 🔬
+        run: |
+          run-clang-tidy-18 -quiet -p build_tidy src/
+          run-clang-tidy-18 -quiet -p build_tests tests/

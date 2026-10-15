@@ -1,0 +1,28 @@
+# clang-tidy rules for Hindsight. Kept deliberately small: checks that catch
+# real bugs, with the noisy or purely stylistic ones turned off. Formatting is
+# clang-format's job, not this file's. To run it locally, build with
+# -DCMAKE_EXPORT_COMPILE_COMMANDS=ON and then:
+#   run-clang-tidy -p <build dir> src/
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-narrowing-conversions,
+  -bugprone-reserved-identifier,
+  clang-analyzer-*,
+  concurrency-*,
+  -concurrency-mt-unsafe,
+  misc-redundant-expression,
+  misc-unused-using-decls,
+  modernize-use-nullptr,
+  modernize-use-override,
+  performance-*,
+  -performance-enum-size,
+  readability-misleading-indentation,
+  readability-redundant-smartptr-get
+
+WarningsAsErrors: '*'
+
+# Only report problems in our own code, not in OBS headers.
+HeaderFilterRegex: '.*/src/.*'

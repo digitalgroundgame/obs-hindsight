@@ -34,6 +34,16 @@ if(ENABLE_QT)
   )
 endif()
 
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.cpp src/hindsight-filter.cpp src/hindsight-filter.hpp)
+target_sources(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE
+    src/plugin-main.cpp
+    src/hindsight-filter.cpp
+    src/hindsight-filter.hpp
+    src/audio-ring.cpp
+    src/audio-ring.hpp
+    src/wav.cpp
+    src/wav.hpp
+)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
