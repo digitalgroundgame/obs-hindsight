@@ -17,6 +17,10 @@
 !LICENSE
 !README.md
 
+# Only the shared skills under .claude are committed; local settings stay out
+/.claude/*
+!/.claude/skills
+
 # Exclude lock files
 *.lock.json
 

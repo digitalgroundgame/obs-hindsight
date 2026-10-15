@@ -46,7 +46,7 @@ memory. Discord moved its docs to docs.discord.com; old
   bot shares no server with the streamer or the streamer blocks DMs from server
   members. The docs do not list the causes, so tell the streamer what to check
   rather than retrying.
-- The bot token is a secret. Never log it or the `Authorization` header.
+- The bot token is a secret: follow the Secrets section of `obs-plugin-docs`.
 
 ## When you change this code
 

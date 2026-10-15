@@ -26,12 +26,16 @@ calls from memory: the C API changes between releases (the old
 4. **Models README** for model names, sizes and where to download them:
    https://github.com/ggml-org/whisper.cpp/blob/v1.9.5/models/README.md
 
-To read them locally without the web:
+To read them locally without the web, set `WHISPER_TAG` to the pinned tag
+(find it with `rg -n 'whisper' buildspec.json CMakeLists.txt cmake`), or to the
+latest release tag if nothing is pinned yet:
 
 ```sh
-git clone --depth 1 --filter=blob:none --sparse --branch v1.9.5 \
-  https://github.com/ggml-org/whisper.cpp "$TMPDIR/whisper.cpp"
-git -C "$TMPDIR/whisper.cpp" sparse-checkout set include examples models
+WHISPER_TAG=v1.9.5  # replace with the pinned tag
+WHISPER_SRC=$(mktemp -d)/whisper.cpp
+git clone --depth 1 --filter=blob:none --sparse --branch "$WHISPER_TAG" \
+  https://github.com/ggml-org/whisper.cpp "$WHISPER_SRC"
+git -C "$WHISPER_SRC" sparse-checkout set include examples models
 ```
 
 ## Facts Hindsight depends on

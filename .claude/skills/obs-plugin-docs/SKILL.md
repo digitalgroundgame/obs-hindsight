@@ -37,13 +37,14 @@ A sparse, shallow clone of just the headers, docs and example filters is small:
 
 ```sh
 OBS_VERSION=$(jq -r '.dependencies["obs-studio"].version' buildspec.json)
+OBS_SRC=$(mktemp -d)/obs-studio
 git clone --depth 1 --filter=blob:none --sparse --branch "$OBS_VERSION" \
-  https://github.com/obsproject/obs-studio "$TMPDIR/obs-studio"
-git -C "$TMPDIR/obs-studio" sparse-checkout set libobs docs/sphinx plugins/obs-filters
+  https://github.com/obsproject/obs-studio "$OBS_SRC"
+git -C "$OBS_SRC" sparse-checkout set libobs docs/sphinx plugins/obs-filters
 ```
 
-Then grep it, for example `rg -n 'obs_hotkey_register_source' $TMPDIR/obs-studio/libobs`
-or `rg -n 'filter_audio' $TMPDIR/obs-studio/docs/sphinx`. Keep the clone out of
+Then grep it, for example `rg -n 'obs_hotkey_register_source' "$OBS_SRC/libobs"`
+or `rg -n 'filter_audio' "$OBS_SRC/docs/sphinx"`. Keep the clone out of
 this repo. If you can only reach the web, fetch the doc pages below.
 
 ## Starting points
@@ -66,8 +67,10 @@ this repo. If you can only reach the web, fetch the doc pages below.
   https://docs.obsproject.com/reference-modules
 - `obs_module_text` (strings come from `data/locale/en-US.ini`):
   https://docs.obsproject.com/reference-modules#c.obs_module_text
-- `obs_module_config_path` returns memory you must `bfree`, and can return NULL:
-  https://docs.obsproject.com/reference-modules#c.obs_module_config_path
+- `obs_module_config_path` returns memory you must `bfree`, and can return NULL,
+  so check it before use: https://docs.obsproject.com/reference-modules#c.obs_module_config_path
+  (Known gap: `capture()` in `src/hindsight-filter.cpp` passes it to `os_mkdirs`
+  unchecked. Do not copy that.)
 - Header: https://github.com/obsproject/obs-studio/blob/31.1.1/libobs/obs-module.h
 
 ### The audio filter (`src/hindsight-filter.cpp`)
@@ -92,8 +95,12 @@ this repo. If you can only reach the web, fetch the doc pages below.
 - Audio is planar float. `filter_audio` runs on the libobs audio thread
   (see "Libobs Threads" in https://docs.obsproject.com/backend-design), while
   `update`, properties callbacks and hotkeys run on other threads. Never block,
-  allocate large buffers, or do network or disk I/O in `filter_audio`; hand that
-  work to another thread, as `capture()` does.
+  allocate large buffers, or do network or disk I/O in `filter_audio`, and keep
+  any lock it shares with other threads held only briefly. Hand slow work to
+  another thread. (Known gap: `snapshot()` and `update()` in
+  `src/hindsight-filter.cpp` copy or reallocate the whole ring buffer while
+  holding the lock `filter_audio` waits on. Do not copy that pattern; swap
+  buffers or copy in small chunks instead.)
 - Header: https://github.com/obsproject/obs-studio/blob/31.1.1/libobs/media-io/audio-io.h
 - Volume meters and faders, if we ever need levels:
   https://github.com/obsproject/obs-studio/blob/31.1.1/libobs/obs-audio-controls.h
@@ -112,12 +119,23 @@ https://github.com/obsproject/obs-studio/blob/31.1.1/libobs/obs-hotkey.h
 
 - Properties UI (`obs_properties_add_text`, `OBS_TEXT_PASSWORD`, `OBS_TEXT_INFO`,
   `obs_property_text_set_info_type`, `obs_properties_add_int_slider`,
-  `obs_properties_add_button`): https://docs.obsproject.com/reference-properties
+  `obs_properties_add_button2`): https://docs.obsproject.com/reference-properties
+  Use `obs_properties_add_button2`, not `obs_properties_add_button`: only the
+  `2` version passes your filter pointer to the click callback.
 - Settings data (`obs_data_get_string`, `obs_data_get_int`,
   `obs_data_set_default_int`, reference counting with `obs_data_release`):
   https://docs.obsproject.com/reference-settings
+### Secrets
+
+This section is the one place the secret rules live; other skills link here.
+
+- API keys and bot tokens never go in logs, crash reports, error messages or
+  the `obs_log` output, and neither do request headers that carry them.
 - Filter settings are saved in the scene collection, which streamers export and
-  share. Secrets (API keys, bot tokens) should not live there long term.
+  share, so secrets must not live there. Store them in module config
+  (`obs_module_config_path`) instead. (Known gap: the filter currently keeps
+  `claude_api_key` and `discord_bot_token` in its settings; that has to move
+  before a public release.)
 
 ### Logging, memory and files
 

@@ -32,11 +32,13 @@ load it as well; it is kept current and covers raw HTTP under `curl/`.
 - `POST https://api.anthropic.com/v1/messages` with headers `x-api-key`,
   `anthropic-version: 2023-06-01` and `content-type: application/json`. Required
   body fields are `model`, `max_tokens` and `messages`.
-- Default model is `claude-opus-5-5` unless tadjh picks another. Use model IDs
-  exactly as the models page lists them, with no date suffix. On Opus 5.5
-  thinking cannot be turned off (sending `thinking: {"type": "disabled"}` is a
-  400) and effort defaults to `medium`. For a fast on-stream answer, set
-  `output_config.effort` explicitly rather than relying on the default.
+- Model choice is tadjh's call; until then use the models page's recommended
+  default. Use model IDs exactly as that page lists them, with no date suffix.
+  Re-check the page for whether the model allows turning thinking off and what
+  its default effort is before relying on either. As of 2026-10-15 the default
+  was `claude-opus-5-5`, which always thinks and defaults to `medium` effort.
+  For a fast on-stream answer, set `output_config.effort` explicitly rather
+  than relying on the default.
 - The response `content` is an array of blocks and can include `thinking`
   blocks. Concatenate only the `type == "text"` blocks. Parse JSON with a real
   JSON parser, never string matching.
@@ -45,10 +47,8 @@ load it as well; it is kept current and covers raw HTTP under `curl/`.
 - Retry 429, 500, 529 and connection errors with backoff, honouring
   `retry-after` when present. Do not retry 400, 401 or 403; show the streamer a
   clear message (401 almost always means a bad API key).
-- Log the `request-id` response header on failures. Never log the API key or the
-  full request headers.
-- The streamer's API key is a secret. Do not put it in logs, crash reports, or
-  settings that get exported with scene collections.
+- Log the `request-id` response header on failures.
+- The API key is a secret: follow the Secrets section of `obs-plugin-docs`.
 
 ## When you change this code
 
