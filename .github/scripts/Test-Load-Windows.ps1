@@ -59,11 +59,11 @@ Copy-Item -Path (Join-Path $Unpacked $ProductName) -Destination $PluginsDir -Rec
 Get-ChildItem -Path (Join-Path $PluginsDir $ProductName) -Recurse | ForEach-Object { $_.FullName }
 Write-Output '::endgroup::'
 
-# Portable mode keeps OBS's config and logs in $ObsDir\config.
+# Not portable mode: OBS skips ProgramData plugins in portable mode, and a
+# streamer's OBS keeps its config and logs in AppData too.
 $ObsBin = Join-Path $ObsDir 'bin\64bit'
-$LogDir = Join-Path $ObsDir 'config\obs-studio\logs'
+$LogDir = Join-Path $env:APPDATA 'obs-studio\logs'
 $ObsArgs = @(
-    '--portable'
     '--minimize-to-tray'
     '--disable-updater'
     '--disable-shutdown-check'
