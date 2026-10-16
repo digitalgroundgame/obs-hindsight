@@ -2,8 +2,8 @@ name: Code Checks
 run-name: ${{ github.event.pull_request.title || github.ref_name }} code checks 🧪
 on:
   workflow_dispatch:
-  push:
-    branches: [master, main]
+  # Pushes to main run these through push.yaml, so they gate the release.
+  workflow_call:
   pull_request:
     paths-ignore:
       - '**.md'
@@ -52,7 +52,7 @@ jobs:
           # (.github/scripts/utils.zsh/setup_ubuntu), plus the clang tools.
           sudo add-apt-repository --yes ppa:obsproject/obs-studio
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y obs-studio libsimde-dev libgles2-mesa-dev libcurl4-openssl-dev ninja-build clang-18 clang-tidy-18
+          sudo apt-get install --no-install-recommends -y obs-studio libsimde-dev libgles2-mesa-dev qt6-base-dev libcurl4-openssl-dev ninja-build clang-18 clang-tidy-18
 
       - name: Generate Compile Commands ⚙️
         env:

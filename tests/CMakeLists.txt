@@ -35,10 +35,22 @@ include(../src/hindsight-core.cmake)
 
 add_library(hindsight-core STATIC ${HINDSIGHT_CORE_SOURCES})
 target_include_directories(hindsight-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+if(WIN32)
+  target_link_libraries(hindsight-core PUBLIC crypt32)
+endif()
 
 enable_testing()
 
-foreach(_test IN ITEMS audio-ring-test version-check-test wav-test)
+set(
+  HINDSIGHT_TESTS
+  audio-ring-test
+  secret-seal-test
+  secrets-test
+  version-check-test
+  wav-test
+)
+
+foreach(_test IN LISTS HINDSIGHT_TESTS)
   add_executable(${_test} ${_test}.cpp)
   target_link_libraries(${_test} PRIVATE hindsight-core)
   add_test(NAME ${_test} COMMAND ${_test})

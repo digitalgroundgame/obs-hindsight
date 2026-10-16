@@ -11,19 +11,55 @@ Design plan: [#1](https://github.com/digitalgroundgame/obs-hindsight/issues/1).
 
 Windows, OBS 31.1 or newer:
 
-1. Download `obs-hindsight-<version>-windows-x64.zip` from the
+1. Download `obs-hindsight-<version>-windows-x64-installer.exe` from the
    [latest release](https://github.com/digitalgroundgame/obs-hindsight/releases/latest).
 2. Close OBS.
-3. Extract the zip. It holds one folder, `obs-hindsight`.
-4. Move that folder into `C:\ProgramData\obs-studio\plugins\` (create
-   `plugins` if it does not exist). You should end up with
-   `C:\ProgramData\obs-studio\plugins\obs-hindsight\bin\64bit\obs-hindsight.dll`.
-   `ProgramData` is hidden by default; paste the path into the Explorer
-   address bar to get there.
-5. Start OBS. **Help > Log Files > View Current Log** should contain
+3. Double-click the installer and work through the warnings below, then click
+   **Install**.
+4. Start OBS. **Help > Log Files > View Current Log** should contain
    `[obs-hindsight] plugin loaded successfully`.
 
-To update, replace the folder with the new one. To uninstall, delete it.
+### Windows warnings you will see
+
+The installer is not code-signed yet, so Windows does not know who made it and
+warns you before running it. These warnings are expected. Only click past them
+for an installer you downloaded from the release page linked above.
+
+- **Your browser may hold the download back** with a message like "isn't
+  commonly downloaded". In Edge, open the **...** menu next to the download,
+  choose **Keep**, then **Show more** and **Keep anyway**. In Chrome, choose
+  **Keep**.
+- **"Windows protected your PC"** (a blue SmartScreen window) appears when you
+  open the installer. Click **More info**, check that the app is
+  `obs-hindsight-<version>-windows-x64-installer.exe`, then click
+  **Run anyway**.
+- **"Do you want to allow this app from an unknown publisher to make changes
+  to your device?"** asks for administrator rights, because the plugin goes in
+  the shared OBS plugins folder. Click **Yes**.
+
+To check the file is the one we published, compare its SHA-256 (in PowerShell:
+`Get-FileHash .\obs-hindsight-<version>-windows-x64-installer.exe`) with the
+checksum listed on the release page.
+
+### Updating and uninstalling
+
+To update, run the newer installer the same way. It replaces the old version
+and keeps your settings and keys. If OBS is open, the installer offers to
+close it.
+
+To uninstall, open Windows **Settings > Apps > Installed apps**, find
+**Hindsight for OBS**, and choose **Uninstall**.
+
+### Installing by hand
+
+If you would rather not run an installer, download
+`obs-hindsight-<version>-windows-x64.zip` instead, close OBS, extract it, and
+move the `obs-hindsight` folder into `C:\ProgramData\obs-studio\plugins\`
+(create `plugins` if it does not exist). You should end up with
+`C:\ProgramData\obs-studio\plugins\obs-hindsight\bin\64bit\obs-hindsight.dll`.
+`ProgramData` is hidden by default; paste the path into the Explorer address
+bar to get there. To update, replace the folder with the new one. To
+uninstall, delete it.
 
 ## Trying the current build
 
@@ -92,8 +128,9 @@ GPL-2.0, as required for plugins that link against OBS. See [LICENSE](LICENSE).
 Every merge to `main` publishes a GitHub release for the `version` in
 `buildspec.json`, with the Windows, macOS and Linux downloads attached. If that
 version was already released, the merge builds but publishes nothing, so bump
-the version in the PR that should ship. A version like `0.2.0-beta1` or
-`0.2.0-rc1` is published as a pre-release.
+the version in the PR that should ship. The release waits for the build,
+formatting, unit tests and clang-tidy, and is skipped if any of them fail. A
+version like `0.2.0-beta1` or `0.2.0-rc1` is published as a pre-release.
 
 Pushing a version tag by hand still works the way the template intended: it
 creates a draft release to review and publish yourself.

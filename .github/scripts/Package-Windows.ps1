@@ -46,6 +46,7 @@ function Package {
     $BuildSpec = Get-Content -Path ${BuildSpecFile} -Raw | ConvertFrom-Json
     $ProductName = $BuildSpec.name
     $ProductVersion = $BuildSpec.version
+    $DisplayName = $BuildSpec.displayName
 
     $OutputName = "${ProductName}-${ProductVersion}-windows-${Target}"
 
@@ -53,6 +54,7 @@ function Package {
         ErrorAction = 'SilentlyContinue'
         Path = @(
             "${ProjectRoot}/release/${ProductName}-*-windows-*.zip"
+            "${ProjectRoot}/release/${ProductName}-*-windows-*-installer.exe"
         )
     }
 
@@ -66,6 +68,32 @@ function Package {
         Verbose = ($Env:CI -ne $null)
     }
     Compress-Archive -Force @CompressArgs
+    Log-Group
+
+    Log-Group "Building ${ProductName} installer..."
+    $Iscc = "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe"
+    if ( ! ( Test-Path $Iscc ) ) {
+        choco install innosetup --yes --no-progress
+        if ( $LASTEXITCODE -ne 0 ) { throw "Installing Inno Setup failed" }
+    }
+
+    # VersionInfoVersion only takes numbers, so drop a -beta1 or -rc1 suffix.
+    $FileVersion = $ProductVersion -replace '-.*$', ''
+
+    $IsccArgs = @(
+        "/DPluginName=${ProductName}"
+        "/DDisplayName=${DisplayName}"
+        "/DAppVersion=${ProductVersion}"
+        "/DFileVersion=${FileVersion}"
+        "/DPublisher=$($BuildSpec.author)"
+        "/DWebsite=$($BuildSpec.website)"
+        "/DSourceDir=${ProjectRoot}\release\${Configuration}\${ProductName}"
+        "/DOutputDir=${ProjectRoot}\release"
+        "/DOutputName=${OutputName}-installer"
+        "${ProjectRoot}\cmake\windows\resources\installer-Windows.iss"
+    )
+    & $Iscc @IsccArgs
+    if ( $LASTEXITCODE -ne 0 ) { throw "Building the installer failed" }
     Log-Group
 }
 
