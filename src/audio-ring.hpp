@@ -51,8 +51,10 @@ public:
 	std::size_t size() const { return queue.size / sizeof(float); }
 
 	// Mixes `frames` frames of planar audio (one array per channel, as OBS
-	// hands it over) down to mono and appends them. A null plane counts as
-	// silence.
+	// hands it over) down to mono and appends them. Only the channels that
+	// carry sound in this chunk are averaged, so a mic on one or two
+	// channels of a 5.1 layout keeps its level. A null or all-zero plane
+	// counts as silent; if every plane is, silence is appended.
 	void push_planar(const float *const *planes, std::size_t channels, std::size_t frames);
 
 	// Returns the buffered audio, oldest sample first.

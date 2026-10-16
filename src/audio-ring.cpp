@@ -61,11 +61,23 @@ void AudioRing::push_planar(const float *const *planes, std::size_t channels, st
 	if (max_samples == 0 || channels == 0)
 		return;
 
+	// Count the channels that carry sound in this chunk. A mic usually
+	// feeds one or two of them; averaging over all six of a 5.1 layout
+	// would play it at a third of its level or less. Silent channels add
+	// nothing to the sum, so dividing by this count is all it takes.
+	std::size_t active = 0;
+	for (std::size_t ch = 0; ch < channels; ch++) {
+		const float *plane = planes[ch];
+		if (plane && std::any_of(plane, plane + frames, [](float s) { return s != 0.0f; }))
+			active++;
+	}
+	const float scale = active > 0 ? 1.0f / static_cast<float>(active) : 0.0f;
+
 	for (std::size_t frame = 0; frame < frames; frame++) {
 		float sum = 0.0f;
 		for (std::size_t ch = 0; ch < channels; ch++)
 			sum += planes[ch] ? planes[ch][frame] : 0.0f;
-		const float sample = sum / static_cast<float>(channels);
+		const float sample = sum * scale;
 
 		// Drop the oldest sample first, so the queue never outgrows the
 		// space reset() reserved and never reallocates here.
