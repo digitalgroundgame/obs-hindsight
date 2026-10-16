@@ -55,7 +55,10 @@ target_sources(
     src/update-check.cpp
     src/update-check.hpp
     ${HINDSIGHT_CORE_SOURCES}
+    src/claude-client.cpp
+    src/claude-client.hpp
 )
+target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PRIVATE "${HINDSIGHT_JSON_INCLUDE_DIR}")
 
 # DPAPI, which secret-seal.cpp uses to encrypt the saved keys.
 if(WIN32)
