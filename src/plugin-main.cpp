@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include "answer-pipeline.hpp"
 #include "hindsight-filter.hpp"
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
@@ -51,6 +52,7 @@ bool obs_module_load(void)
 		return true;
 	}
 	speech_model_start();
+	answer_pipeline_start();
 	if (plugin_settings_check_for_updates())
 		update_check_start();
 	else
@@ -62,6 +64,7 @@ void obs_module_unload(void)
 {
 	update_check_stop();
 	speech_model_stop();
+	answer_pipeline_stop();
 	transcriber_unload();
 	if (curl_ready)
 		curl_global_cleanup();

@@ -69,17 +69,23 @@ uninstall, delete it.
 
 ## Trying the current build
 
-This is an early test build. It does not transcribe, call Claude or message
-Discord yet; it proves the audio capture.
+This is an early test build. The hotkey transcribes the last 30 seconds of your
+mic on your PC, asks Claude for the question and answer, and writes them to the
+OBS log. It does not message Discord yet.
 
-1. [Install the plugin](#installing).
-2. Open your mic's **Filters**, add **Hindsight**, and close the window.
-3. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
+1. [Install the plugin](#installing) and start OBS. Wait a minute or two for
+   the speech model to download; the log says `speech model downloaded` when
+   it's done.
+2. Under **Tools > Hindsight settings**, enter your Claude API key and click
+   **Save**.
+3. Open your mic's **Filters**, add **Hindsight**, and close the window.
+4. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
    last question" under it.
-4. Talk for a bit, then press the hotkey (or click **Save the last clip now**
-   in the filter's settings).
-5. **Help > Log Files > View Current Log** shows where the WAV was saved. Play
-   it back: it should be the last 30 seconds of your mic.
+5. Ask a question out loud, then press the hotkey (or click **Save the last
+   clip now** in the filter's settings).
+6. **Help > Log Files > View Current Log** shows what Hindsight heard, the
+   question Claude found and its answer, with timings, plus where the clip was
+   saved as a WAV.
 
 ## Update notices
 
