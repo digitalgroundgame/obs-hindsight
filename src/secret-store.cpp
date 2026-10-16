@@ -23,10 +23,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 #include <util/platform.h>
 
-#ifndef _WIN32
-#include <sys/stat.h>
-#endif
-
 #include <mutex>
 #include <string>
 
@@ -74,6 +70,11 @@ std::string secrets_path()
 // store_lock.
 bool write_secrets(const Secrets &secrets)
 {
+	if (!can_seal_secrets()) {
+		obs_log(LOG_ERROR, "saving keys only works on Windows for now");
+		return false;
+	}
+
 	const std::string path = secrets_path();
 	if (path.empty())
 		return false;
@@ -88,14 +89,8 @@ bool write_secrets(const Secrets &secrets)
 		obs_log(LOG_ERROR, "could not encrypt the keys");
 		return false;
 	}
-	if (os_quick_write_utf8_file_safe(path.c_str(), contents.c_str(), contents.size(), false, "tmp", nullptr)) {
-#ifndef _WIN32
-		// Only Windows gets encryption, so elsewhere at least keep other
-		// users on the machine from reading the file.
-		chmod(path.c_str(), S_IRUSR | S_IWUSR);
-#endif
+	if (os_quick_write_utf8_file_safe(path.c_str(), contents.c_str(), contents.size(), false, "tmp", nullptr))
 		return true;
-	}
 
 	// libobs leaves the temporary file behind when the final replace fails
 	// (say, antivirus has the file open). Don't leave the keys lying there.

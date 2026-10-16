@@ -77,6 +77,11 @@ bool from_base64(const std::string &text, std::string &bytes)
 
 } // namespace
 
+bool can_seal_secrets()
+{
+	return true;
+}
+
 std::string seal_secrets_text(const std::string &text)
 {
 	std::string sealed;
@@ -103,27 +108,24 @@ bool open_secrets_text(const std::string &contents, std::string &text)
 
 #else
 
-namespace {
+// Stubs until macOS (Keychain) and Linux (libsecret) support lands in #15.
+// They refuse rather than store the keys unencrypted, so saving keys fails
+// with a logged error on those platforms.
 
-constexpr const char *kScheme = "plain:";
-
-} // namespace
-
-// No encryption outside Windows yet (#15); secret-store.cpp makes the file
-// readable by its owner only.
-std::string seal_secrets_text(const std::string &text)
+bool can_seal_secrets()
 {
-	return kScheme + text;
+	return false;
 }
 
-bool open_secrets_text(const std::string &contents, std::string &text)
+std::string seal_secrets_text(const std::string &)
+{
+	return "";
+}
+
+bool open_secrets_text(const std::string &, std::string &text)
 {
 	text.clear();
-	const std::string scheme = kScheme;
-	if (contents.compare(0, scheme.size(), scheme) != 0)
-		return false;
-	text = contents.substr(scheme.size());
-	return true;
+	return false;
 }
 
 #endif
