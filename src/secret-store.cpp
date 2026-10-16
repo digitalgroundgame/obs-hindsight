@@ -24,7 +24,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <util/platform.h>
 
 #ifndef _WIN32
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 #include <mutex>
@@ -69,6 +71,21 @@ std::string secrets_path()
 	return result;
 }
 
+#ifndef _WIN32
+// Only Windows encrypts the keys (#15), so elsewhere make the temporary file
+// readable by its owner only before any key is written to it. libobs then
+// truncates it in place and renames it, which keeps that mode.
+bool create_private_file(const std::string &path)
+{
+	const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+	if (fd < 0)
+		return false;
+	// open() leaves the mode of a file that already existed alone.
+	const bool private_mode = fchmod(fd, S_IRUSR | S_IWUSR) == 0;
+	return close(fd) == 0 && private_mode;
+}
+#endif
+
 // Writes through a temporary file so a crash never leaves half a file, and
 // keeps no backup copy so forgotten keys are really gone. Caller holds
 // store_lock.
@@ -88,14 +105,14 @@ bool write_secrets(const Secrets &secrets)
 		obs_log(LOG_ERROR, "could not encrypt the keys");
 		return false;
 	}
-	if (os_quick_write_utf8_file_safe(path.c_str(), contents.c_str(), contents.size(), false, "tmp", nullptr)) {
 #ifndef _WIN32
-		// Only Windows gets encryption, so elsewhere at least keep other
-		// users on the machine from reading the file.
-		chmod(path.c_str(), S_IRUSR | S_IWUSR);
-#endif
-		return true;
+	if (!create_private_file(path + ".tmp")) {
+		obs_log(LOG_ERROR, "could not create a private file to save the keys in");
+		return false;
 	}
+#endif
+	if (os_quick_write_utf8_file_safe(path.c_str(), contents.c_str(), contents.size(), false, "tmp", nullptr))
+		return true;
 
 	// libobs leaves the temporary file behind when the final replace fails
 	// (say, antivirus has the file open). Don't leave the keys lying there.
@@ -115,7 +132,8 @@ void secret_store_load()
 	if (contents) {
 		std::string text;
 		if (!open_secrets_text(contents, text) || !decode_secrets(text, loaded))
-			obs_log(LOG_WARNING, "could not read the saved keys; enter them again");
+			obs_log(LOG_WARNING,
+				"could not read the saved keys; enter them again, and the next Save replaces the file");
 		bfree(contents);
 	}
 
