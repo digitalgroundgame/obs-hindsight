@@ -38,7 +38,7 @@ struct UpdateNotice {
 UpdateNotice update_notice_current();
 
 // When there is no notice, the settings window offers Check for updates and
-// shows how the last check went (empty before any check).
+// shows how the last check went.
 std::string update_check_status_text();
 bool update_check_running();
 

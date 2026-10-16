@@ -23,6 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "clip-cleanup.hpp"
 #include "clip-file.hpp"
 #include "secret-store.hpp"
+#include "speech-model.hpp"
 #include "update-check.hpp"
 #include "update-notice.hpp"
 #include "wav.hpp"
@@ -375,18 +376,44 @@ void add_update_notice(obs_properties_t *props, HindsightFilter *filter)
 	}
 }
 
+// One line saying whether Hindsight can answer yet, or the first thing it is
+// missing. OBS colours warning and error lines with the streamer's theme. It
+// is worked out when the settings open; Tools > Hindsight settings has the
+// live details.
+void add_ready_line(obs_properties_t *props)
+{
+	const SpeechModelStatus model = speech_model_status();
+	const bool speech_failed = model.state == SpeechModelStatus::State::failed &&
+				   model.model == SpeechModelStatus::Model::speech;
+	const bool speech_busy = model.state == SpeechModelStatus::State::checking ||
+				 model.state == SpeechModelStatus::State::downloading;
+
+	const char *key = "Hindsight.FilterReady";
+	enum obs_text_info_type type = OBS_TEXT_INFO_NORMAL;
+	if (secret_store_get().claude_api_key.empty()) {
+		key = "Hindsight.FilterNeedsKey";
+		type = OBS_TEXT_INFO_WARNING;
+	} else if (speech_failed) {
+		key = "Hindsight.FilterModelFailed";
+		type = OBS_TEXT_INFO_ERROR;
+	} else if (speech_busy) {
+		key = "Hindsight.FilterModelBusy";
+		type = OBS_TEXT_INFO_WARNING;
+	}
+	obs_property_t *line = obs_properties_add_text(props, "ready", obs_module_text(key), OBS_TEXT_INFO);
+	obs_property_text_set_info_type(line, type);
+}
+
 obs_properties_t *get_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
 	add_update_notice(props, static_cast<HindsightFilter *>(data));
 
+	add_ready_line(props);
+
 	obs_property_t *note =
 		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
 	obs_property_text_set_info_type(note, OBS_TEXT_INFO_NORMAL);
-
-	obs_property_t *keys_note =
-		obs_properties_add_text(props, "keys_note", obs_module_text("Hindsight.KeysNote"), OBS_TEXT_INFO);
-	obs_property_text_set_info_type(keys_note, OBS_TEXT_INFO_NORMAL);
 
 	obs_properties_add_text(props, "discord_user_id", obs_module_text("Hindsight.DiscordUserId"), OBS_TEXT_DEFAULT);
 	obs_properties_add_int_slider(props, "window_seconds", obs_module_text("Hindsight.WindowSeconds"),
