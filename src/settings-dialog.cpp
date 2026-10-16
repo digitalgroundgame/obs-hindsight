@@ -19,6 +19,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "settings-dialog.hpp"
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
+#include "update-check.hpp"
+#include "update-notice.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -26,12 +28,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QCheckBox>
 #include <QDialog>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace {
@@ -64,6 +69,44 @@ KeyRow add_key_row(QFormLayout *form, const char *label, const char *forget_labe
 	return row;
 }
 
+// The same update notice as the filter's settings, at the top of the window.
+// A timer redraws it while the window is open, so it follows a download.
+void add_update_notice(QVBoxLayout *layout, QDialog *dialog)
+{
+	if (!update_notice_current().show)
+		return;
+
+	auto *text = new QLabel(dialog);
+	text->setWordWrap(true);
+	layout->addWidget(text);
+	auto *update_now = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.UpdateNow")), dialog);
+	auto *release_page = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.DownloadUpdate")), dialog);
+	auto *line = new QHBoxLayout();
+	line->addWidget(update_now);
+	line->addWidget(release_page);
+	line->addStretch(1);
+	layout->addLayout(line);
+
+	auto refresh = [text, update_now, release_page]() {
+		const UpdateNotice notice = update_notice_current();
+		text->setText(QString::fromStdString(notice.text));
+		update_now->setVisible(notice.offer_update_now);
+		update_now->setEnabled(notice.update_now_enabled);
+		release_page->setVisible(notice.offer_release_page);
+	};
+	refresh();
+
+	QObject::connect(update_now, &QPushButton::clicked, dialog, [refresh]() {
+		update_notice_update_now(nullptr);
+		refresh();
+	});
+	QObject::connect(release_page, &QPushButton::clicked, dialog,
+			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kHindsightReleasesPage))); });
+	auto *timer = new QTimer(dialog);
+	QObject::connect(timer, &QTimer::timeout, dialog, refresh);
+	timer->start(500);
+}
+
 void open_settings_dialog(void *)
 {
 	auto *main_window = static_cast<QWidget *>(obs_frontend_get_main_window());
@@ -72,6 +115,8 @@ void open_settings_dialog(void *)
 	dialog.setMinimumWidth(480);
 
 	auto *layout = new QVBoxLayout(&dialog);
+	add_update_notice(layout, &dialog);
+
 	auto *note = new QLabel(QString::fromUtf8(obs_module_text("Hindsight.SettingsNote")), &dialog);
 	note->setWordWrap(true);
 	layout->addWidget(note);
