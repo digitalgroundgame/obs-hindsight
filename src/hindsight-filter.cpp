@@ -17,11 +17,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "hindsight-filter.hpp"
+#include "answer-pipeline.hpp"
 #include "audio-freshness.hpp"
 #include "audio-ring.hpp"
+#include "clip-cleanup.hpp"
 #include "clip-file.hpp"
 #include "secret-store.hpp"
+#include "speech-model.hpp"
 #include "update-check.hpp"
+#include "update-notice.hpp"
 #include "wav.hpp"
 
 #include <obs-module.h>
@@ -120,26 +124,13 @@ bool write_wav(FILE *file, const std::vector<uint8_t> &bytes)
 	return fclose(file) == 0 && written;
 }
 
-// Returns the clips folder, or "" if OBS cannot give the plugin a config
-// folder.
-std::string clips_folder()
-{
-	char *dir = obs_module_config_path("clips");
-	if (!dir)
-		return "";
-	os_mkdirs(dir);
-	const std::string folder = dir;
-	bfree(dir);
-	return folder;
-}
-
 // Runs on the clip writer's thread. Each filter has its own clip writer, so
 // two filters can save a clip of the same name at once; create_new_file
 // gives each its own file.
 void write_clip(void *param)
 {
 	auto *job = static_cast<ClipJob *>(param);
-	const std::string folder = clips_folder();
+	const std::string folder = hindsight_clips_folder();
 	const double seconds = static_cast<double>(job->samples.size()) / job->sample_rate;
 
 	// Encoded before a name is taken, so a clip too long for WAV (encoded as
@@ -155,9 +146,11 @@ void write_clip(void *param)
 		if (!clip.file)
 			obs_log(LOG_ERROR, "could not create a file for %s.wav in %s", job->name.c_str(),
 				folder.c_str());
-		else if (write_wav(clip.file, bytes))
+		else if (write_wav(clip.file, bytes)) {
 			obs_log(LOG_INFO, "saved %.1f s of audio to %s", seconds, clip.path.c_str());
-		else
+			// Each clip is a few megabytes, so only the latest few are kept.
+			delete_old_clips(folder, kClipsToKeep);
+		} else
 			obs_log(LOG_ERROR, "could not write %s", clip.path.c_str());
 	}
 
@@ -165,8 +158,8 @@ void write_clip(void *param)
 	delete job;
 }
 
-// What the hotkey will eventually do end to end. For the spike it saves the
-// buffered audio so we can listen to exactly what would be transcribed.
+// What the hotkey does: hands the clip to the answer pipeline, and saves it
+// as a WAV so we can listen to exactly what was transcribed.
 void capture(HindsightFilter *filter)
 {
 	// Each clip holds up to 30 s of audio (about 6 MB), so don't let them
@@ -184,6 +177,8 @@ void capture(HindsightFilter *filter)
 			filter->window_seconds.load());
 		return;
 	}
+
+	answer_pipeline_ask(samples, filter->sample_rate);
 
 	// Named for when the hotkey was pressed, the way OBS names recordings.
 	char *name = os_generate_formatted_filename(nullptr, false, "hindsight-%CCYY%MM%DD-%hh%mm%ss");
@@ -345,44 +340,82 @@ bool on_download_update_clicked(obs_properties_t *, obs_property_t *, void *)
 	return false; // OBS opens the button's URL itself
 }
 
-// Shown at the top of the filter's settings when update-check.cpp found a
-// newer release. OBS_BUTTON_URL buttons open their URL in the browser:
-// https://github.com/obsproject/obs-studio/blob/31.1.1/libobs/obs-properties.h
-void add_update_notice(obs_properties_t *props)
+bool on_update_now_clicked(obs_properties_t *, obs_property_t *, void *data)
 {
-	const std::string version = update_check_newer_version();
-	if (version.empty())
+	auto *filter = static_cast<HindsightFilter *>(data);
+	update_notice_update_now(filter->source);
+	return true; // redraw the settings to show the new state
+}
+
+// Shown at the top of the filter's settings when update-check.cpp found a
+// newer release (update-notice.cpp decides what it says). OBS_BUTTON_URL
+// buttons open their URL in the browser:
+// https://github.com/obsproject/obs-studio/blob/31.1.1/libobs/obs-properties.h
+void add_update_notice(obs_properties_t *props, HindsightFilter *filter)
+{
+	const UpdateNotice notice = update_notice_current();
+	if (!notice.show)
 		return;
 
-	std::string text = obs_module_text("Hindsight.UpdateAvailable");
-	const std::string placeholder = "{version}";
-	const size_t at = text.find(placeholder);
-	if (at != std::string::npos)
-		text.replace(at, placeholder.size(), version);
+	obs_property_t *text = obs_properties_add_text(props, "update_notice", notice.text.c_str(), OBS_TEXT_INFO);
+	obs_property_text_set_info_type(text, notice.is_error ? OBS_TEXT_INFO_ERROR : OBS_TEXT_INFO_WARNING);
 
-	obs_property_t *notice = obs_properties_add_text(props, "update_notice", text.c_str(), OBS_TEXT_INFO);
-	obs_property_text_set_info_type(notice, OBS_TEXT_INFO_WARNING);
+	if (notice.offer_update_now && filter) {
+		obs_property_t *button = obs_properties_add_button2(
+			props, "update_now", obs_module_text("Hindsight.UpdateNow"), on_update_now_clicked, filter);
+		obs_property_set_enabled(button, notice.update_now_enabled);
+	}
 
-	obs_property_t *button = obs_properties_add_button2(props, "download_update",
-							    obs_module_text("Hindsight.DownloadUpdate"),
-							    on_download_update_clicked, nullptr);
-	obs_property_button_set_type(button, OBS_BUTTON_URL);
-	std::string url = kHindsightReleasesPage; // the setter wants a non-const char * and copies it
-	obs_property_button_set_url(button, url.data());
+	if (notice.offer_release_page || !filter) {
+		obs_property_t *button = obs_properties_add_button2(props, "download_update",
+								    obs_module_text("Hindsight.DownloadUpdate"),
+								    on_download_update_clicked, nullptr);
+		obs_property_button_set_type(button, OBS_BUTTON_URL);
+		std::string url = kHindsightReleasesPage; // the setter wants a non-const char * and copies it
+		obs_property_button_set_url(button, url.data());
+	}
+}
+
+// One line saying whether Hindsight can answer yet, or the first thing it is
+// missing. OBS colours warning and error lines with the streamer's theme. It
+// is worked out when the settings open; Tools > Hindsight settings has the
+// live details.
+void add_ready_line(obs_properties_t *props)
+{
+	const SpeechModelStatus model = speech_model_status();
+	// Only the speech model matters here: without voice detection Hindsight
+	// still transcribes, just slower.
+	const bool speech = model.model == SpeechModelStatus::Model::speech;
+	const bool speech_failed = speech && model.state == SpeechModelStatus::State::failed;
+	const bool speech_busy = speech && (model.state == SpeechModelStatus::State::checking ||
+					    model.state == SpeechModelStatus::State::downloading);
+
+	const char *key = "Hindsight.FilterReady";
+	enum obs_text_info_type type = OBS_TEXT_INFO_NORMAL;
+	if (secret_store_get().claude_api_key.empty()) {
+		key = "Hindsight.FilterNeedsKey";
+		type = OBS_TEXT_INFO_WARNING;
+	} else if (speech_failed) {
+		key = "Hindsight.FilterModelFailed";
+		type = OBS_TEXT_INFO_ERROR;
+	} else if (speech_busy) {
+		key = "Hindsight.FilterModelBusy";
+		type = OBS_TEXT_INFO_WARNING;
+	}
+	obs_property_t *line = obs_properties_add_text(props, "ready", obs_module_text(key), OBS_TEXT_INFO);
+	obs_property_text_set_info_type(line, type);
 }
 
 obs_properties_t *get_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
-	add_update_notice(props);
+	add_update_notice(props, static_cast<HindsightFilter *>(data));
+
+	add_ready_line(props);
 
 	obs_property_t *note =
 		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
 	obs_property_text_set_info_type(note, OBS_TEXT_INFO_NORMAL);
-
-	obs_property_t *keys_note =
-		obs_properties_add_text(props, "keys_note", obs_module_text("Hindsight.KeysNote"), OBS_TEXT_INFO);
-	obs_property_text_set_info_type(keys_note, OBS_TEXT_INFO_NORMAL);
 
 	obs_properties_add_int_slider(props, "window_seconds", obs_module_text("Hindsight.WindowSeconds"),
 				      kMinWindowSeconds, kMaxWindowSeconds, 1);
@@ -393,6 +426,17 @@ obs_properties_t *get_properties(void *data)
 }
 
 } // namespace
+
+std::string hindsight_clips_folder()
+{
+	char *dir = obs_module_config_path("clips");
+	if (!dir)
+		return "";
+	os_mkdirs(dir);
+	const std::string folder = dir;
+	bfree(dir);
+	return folder;
+}
 
 void register_hindsight_filter()
 {

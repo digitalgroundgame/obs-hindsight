@@ -42,7 +42,7 @@ jobs:
             os: windows-2022
             sanitize: 'OFF'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build Tests 🧱
         run: |
@@ -61,7 +61,7 @@ jobs:
     name: clang-tidy 🔬
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Dependencies 🛍️
         run: |
@@ -81,5 +81,7 @@ jobs:
 
       - name: Run clang-tidy 🔬
         run: |
-          run-clang-tidy-18 -quiet -p build_tidy src/
+          # The full path, so whisper.cpp's own src/ folder (fetched into
+          # the build folder) isn't checked too.
+          run-clang-tidy-18 -quiet -p build_tidy "$PWD/src/"
           run-clang-tidy-18 -quiet -p build_tests tests/

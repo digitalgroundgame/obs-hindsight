@@ -8,10 +8,10 @@ permissions:
   issues: write
 jobs:
   check:
-    name: Check for template and OBS updates 🔎
+    name: Check for template, OBS and whisper.cpp updates 🔎
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Compare against upstream 🔍
         id: compare
@@ -37,8 +37,22 @@ jobs:
             body+="  Bumping it needs new dependency hashes and a test build."$'\n'
           fi
 
+          # whisper.cpp, pinned by release and commit in src/whisper.cmake.
+          if [[ -f src/whisper.cmake ]]; then
+            whisper_pinned=$(sed -n 's/^set(_whisper_version \(v[^)]*\))$/\1/p' src/whisper.cmake)
+            whisper_latest=$(gh api repos/ggml-org/whisper.cpp/releases/latest --jq .tag_name) || whisper_latest=''
+            if [[ -z "${whisper_latest}" ]]; then
+              body+="- **whisper.cpp**: could not look up its latest release; check https://github.com/ggml-org/whisper.cpp/releases by hand."$'\n'
+            elif [[ -z "${whisper_pinned}" ]]; then
+              body+="- **whisper.cpp**: could not read \`_whisper_version\` from \`src/whisper.cmake\`, so this check needs updating."$'\n'
+            elif [[ "${whisper_pinned}" != "${whisper_latest}" ]]; then
+              body+="- **whisper.cpp ${whisper_latest}** is out; \`src/whisper.cmake\` pins ${whisper_pinned}: https://github.com/ggml-org/whisper.cpp/compare/${whisper_pinned}...${whisper_latest}"$'\n'
+              body+="  Bumping it means updating \`_whisper_version\` and \`_whisper_commit\`, checking the model SHA-1 against that release's models/README.md, and a test build."$'\n'
+            fi
+          fi
+
           if [[ -z "${body}" ]]; then
-            echo "Template and OBS are both current."
+            echo "Template, OBS and whisper.cpp are all current."
             exit 0
           fi
 

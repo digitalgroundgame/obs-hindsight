@@ -19,6 +19,12 @@ Windows, OBS 31.1 or newer:
 4. Start OBS. **Help > Log Files > View Current Log** should contain
    `[obs-hindsight] plugin loaded successfully`.
 
+The first time OBS starts with Hindsight, it downloads the speech model (about
+142 MB) from Hugging Face in the background. Speech is transcribed on your PC
+with [whisper.cpp](https://github.com/ggml-org/whisper.cpp); your audio is
+never uploaded. Transcription needs a CPU from about 2015 or newer (one with
+AVX2).
+
 ### Windows warnings you will see
 
 The installer is not code-signed yet, so Windows does not know who made it and
@@ -43,9 +49,11 @@ checksum listed on the release page.
 
 ### Updating and uninstalling
 
-To update, run the newer installer the same way. It replaces the old version
-and keeps your settings and keys. If OBS is open, the installer offers to
-close it.
+On Windows, the easiest way to update is the **Update now** button in the
+Hindsight filter's settings (see [Update notices](#update-notices)). You can
+also run the newer installer the same way as the first one. Either way it
+replaces the old version and keeps your settings and keys. If OBS is open, the
+installer offers to close it, and its last page can start OBS again.
 
 To uninstall, open Windows **Settings > Apps > Installed apps**, find
 **Hindsight for OBS**, and choose **Uninstall**.
@@ -63,24 +71,52 @@ uninstall, delete it.
 
 ## Trying the current build
 
-This is an early test build. It does not transcribe, call Claude or message
-Discord yet; it proves the audio capture.
+<!-- The Windows installer links to this heading (#trying-the-current-build).
+If you rename it, update the link in cmake/windows/resources/installer-Windows.iss. -->
 
-1. [Install the plugin](#installing).
-2. Open your mic's **Filters**, add **Hindsight**, and close the window.
-3. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
+This is an early test build. The hotkey transcribes the last 30 seconds of your
+mic on your PC, asks Claude for the question and answer, and writes them to the
+OBS log. It does not message Discord yet.
+
+1. [Install the plugin](#installing) and start OBS. Wait a minute or two for
+   the speech models to download. **Tools > Hindsight settings** shows the
+   download's progress and says when they're ready, with a **Try again**
+   button if a download fails.
+2. Under **Tools > Hindsight settings**, enter your Claude API key and click
+   **Save**. Create the key on the
+   [API keys](https://platform.claude.com/settings/keys) page of the Claude
+   Console with a workspace selected; a key without a workspace is rejected.
+   Claude searches the web for questions about current events (up to three
+   searches a question, at $0.01 each on your key), so keep web search turned
+   on under [Capabilities](https://platform.claude.com/settings/capabilities).
+3. Open your mic's **Filters**, add **Hindsight**, and close the window.
+4. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
    last question" under it.
-4. Talk for a bit, then press the hotkey (or click **Save the last clip now**
-   in the filter's settings).
-5. **Help > Log Files > View Current Log** shows where the WAV was saved. Play
-   it back: it should be the last 30 seconds of your mic.
+5. Ask a question out loud, then press the hotkey (or click **Save the last
+   clip now** in the filter's settings).
+6. **Help > Log Files > View Current Log** shows what Hindsight heard, the
+   question Claude found and its answer, with timings, plus where the clip was
+   saved as a WAV. Hindsight keeps the last 10 clips; **Delete saved clips**
+   in Tools > Hindsight settings removes them all. Because the log holds what
+   you said, check it before sharing it publicly.
 
 ## Update notices
 
 Each time OBS starts, Hindsight asks GitHub once for the latest release. If a
-newer one is out, the top of the Hindsight filter's settings says so, with a
-**Download the update** button, and the OBS log notes it. If GitHub cannot be
-reached, Hindsight carries on without a notice.
+newer one is out, the top of the Hindsight filter's settings and of **Tools >
+Hindsight settings** says so, and the OBS log notes it. If GitHub cannot be
+reached, Hindsight carries on without a notice. When there is no notice,
+**Tools > Hindsight settings** has a **Check for updates** button to ask again
+at any time.
+
+On Windows the notice has an **Update now** button. It downloads the new
+installer, checks its SHA-256 against the one GitHub lists for the release, and
+opens it. From there it is the usual install: click **Yes** on the Windows
+prompt, then **Install**. The installer closes OBS for you, and its last page
+offers to start OBS again. The button waits while you are streaming or
+recording, since the update closes OBS. If the download or the check fails, the
+notice says so and offers the release page instead. On other systems the notice
+has a **Download the update** button that opens the release page.
 
 ### What the update check sends
 
@@ -89,6 +125,8 @@ One HTTPS GET to
 with `User-Agent: obs-hindsight/<version>` (GitHub requires one) and an
 `Accept` header asking for JSON. Nothing else: no keys, no audio, no details
 about you or your PC. Like any web request, it shows GitHub your IP address.
+**Update now** adds one more HTTPS download, of the installer file itself, only
+when you click it.
 
 ### Turning it off
 
@@ -119,7 +157,8 @@ Every pull request runs these on GitHub Actions:
 - **Builds** on Windows, macOS and Ubuntu with warnings treated as errors.
 - **Formatting** with clang-format (C/C++) and gersemi (CMake).
 - **Unit tests** for the code that does not need OBS (the audio buffer and its
-  freshness checks, the WAV encoder, the saved keys and the version comparison)
+  freshness checks, the WAV encoder, the saved keys, the version comparison and
+  the request to Claude and how its reply is read)
   on Ubuntu, once plain and once under AddressSanitizer and
   UndefinedBehaviorSanitizer, which catch memory bugs and undefined behavior.
   They also run on Windows, the only place the key encryption code runs.
@@ -136,8 +175,10 @@ ctest --test-dir build_tests --output-on-failure
 Code that OBS does not need to run, like the WAV encoder, goes in its own
 file under `src/` without OBS includes, so it can be tested this way. The audio
 buffer is the one exception: it uses libobs's header-only `util/deque.h`, which
-the test build downloads for the OBS version in `buildspec.json` (so the first
-configure needs internet access).
+the test build downloads for the OBS version in `buildspec.json`. JSON is read
+and written with [nlohmann/json](https://github.com/nlohmann/json), which both
+the plugin and test builds download, pinned by hash. So the first configure
+needs internet access.
 
 ## License
 

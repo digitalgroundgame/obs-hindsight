@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "update-check.hpp"
+#include "update-asset.hpp"
 #include "version-check.hpp"
 
 #include <obs-module.h>
@@ -30,6 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 
 const char *const kHindsightReleasesPage = "https://github.com/digitalgroundgame/obs-hindsight/releases/latest";
 
@@ -44,10 +46,16 @@ constexpr std::size_t kMaxResponseBytes = 1024 * 1024;
 
 std::thread worker;
 std::atomic<bool> stopping{false};
-bool curl_ready = false;
+std::atomic<UpdateCheckState> state{UpdateCheckState::not_checked};
 
 std::mutex result_lock;
-std::string newer_version; // guarded by result_lock
+std::string newer_version;                // guarded by result_lock
+std::optional<UpdateInstaller> installer; // guarded by result_lock
+
+struct LatestRelease {
+	std::string tag;
+	std::optional<UpdateInstaller> installer;
+};
 
 size_t append_body(char *data, size_t size, size_t count, void *user)
 {
@@ -66,7 +74,32 @@ int on_progress(void *, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
 	return stopping.load() ? 1 : 0;
 }
 
-std::optional<std::string> fetch_latest_tag()
+// The release's Windows installer among its files, if GitHub gave a usable
+// SHA-256 for it. The Update now button refuses anything else.
+std::optional<UpdateInstaller> find_installer(obs_data_t *json, const std::string &tag)
+{
+	const std::string wanted = windows_installer_name(tag);
+	if (wanted.empty())
+		return std::nullopt;
+
+	std::optional<UpdateInstaller> found;
+	obs_data_array_t *assets = obs_data_get_array(json, "assets");
+	const size_t count = assets ? obs_data_array_count(assets) : 0;
+	for (size_t i = 0; i < count && !found; i++) {
+		obs_data_t *asset = obs_data_array_item(assets, i);
+		const std::optional<std::string> sha256 = sha256_from_digest(obs_data_get_string(asset, "digest"));
+		const long long size = obs_data_get_int(asset, "size");
+		if (wanted == obs_data_get_string(asset, "name") && sha256 && size > 0) {
+			found = UpdateInstaller{wanted, obs_data_get_string(asset, "browser_download_url"), *sha256,
+						static_cast<uint64_t>(size)};
+		}
+		obs_data_release(asset);
+	}
+	obs_data_array_release(assets);
+	return found;
+}
+
+std::optional<LatestRelease> fetch_latest_release()
 {
 	CURL *curl = curl_easy_init();
 	if (!curl)
@@ -111,41 +144,43 @@ std::optional<std::string> fetch_latest_tag()
 		obs_log(LOG_INFO, "update check skipped: GitHub's answer was not JSON");
 		return std::nullopt;
 	}
-	std::string tag = obs_data_get_string(json, "tag_name");
+	LatestRelease release;
+	release.tag = obs_data_get_string(json, "tag_name");
+	release.installer = find_installer(json, release.tag);
 	obs_data_release(json);
-	return tag;
+	return release;
 }
 
 void run_check()
 {
-	const std::optional<std::string> tag = fetch_latest_tag();
-	if (!tag)
-		return;
-
-	if (!update_available(*tag, PLUGIN_VERSION)) {
-		obs_log(LOG_INFO, "up to date (latest release is %s)", tag->c_str());
+	std::optional<LatestRelease> release = fetch_latest_release();
+	if (!release) {
+		state = UpdateCheckState::failed;
 		return;
 	}
 
-	obs_log(LOG_INFO, "Hindsight %s is available (running %s): %s", tag->c_str(), PLUGIN_VERSION,
+	if (!update_available(release->tag, PLUGIN_VERSION)) {
+		obs_log(LOG_INFO, "up to date (latest release is %s)", release->tag.c_str());
+		state = UpdateCheckState::up_to_date;
+		return;
+	}
+
+	obs_log(LOG_INFO, "Hindsight %s is available (running %s): %s", release->tag.c_str(), PLUGIN_VERSION,
 		kHindsightReleasesPage);
 	std::lock_guard<std::mutex> guard(result_lock);
-	newer_version = *tag;
+	newer_version = std::move(release->tag);
+	installer = std::move(release->installer);
+	state = UpdateCheckState::newer;
 }
 
 } // namespace
 
 void update_check_start()
 {
+	if (state == UpdateCheckState::checking)
+		return;
 	if (worker.joinable())
-		return;
-	// curl_global_init is not safe to race with other threads, so do it here
-	// on the thread that loads the module, before the worker starts.
-	curl_ready = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
-	if (!curl_ready) {
-		obs_log(LOG_WARNING, "update check skipped: curl failed to start");
-		return;
-	}
+		worker.join(); // an earlier check, already finished
 	// Without an asynchronous resolver, curl looks up names in one blocking
 	// call that ignores our timeouts (CURLOPT_NOSIGNAL turns off the alarm it
 	// would use) and never calls on_progress. A slow DNS server could then
@@ -153,9 +188,11 @@ void update_check_start()
 	const curl_version_info_data *info = curl_version_info(CURLVERSION_NOW);
 	if (!(info->features & CURL_VERSION_ASYNCHDNS)) {
 		obs_log(LOG_INFO, "update check skipped: this curl build cannot look up names in the background");
+		state = UpdateCheckState::failed;
 		return;
 	}
 	stopping = false;
+	state = UpdateCheckState::checking;
 	worker = std::thread(run_check);
 }
 
@@ -164,14 +201,21 @@ void update_check_stop()
 	stopping = true;
 	if (worker.joinable())
 		worker.join();
-	if (curl_ready) {
-		curl_global_cleanup();
-		curl_ready = false;
-	}
+}
+
+UpdateCheckState update_check_state()
+{
+	return state.load();
 }
 
 std::string update_check_newer_version()
 {
 	std::lock_guard<std::mutex> guard(result_lock);
 	return newer_version;
+}
+
+std::optional<UpdateInstaller> update_check_installer()
+{
+	std::lock_guard<std::mutex> guard(result_lock);
+	return installer;
 }
