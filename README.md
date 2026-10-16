@@ -92,8 +92,9 @@ OBS log. It does not message Discord yet.
    clip now** in the filter's settings).
 6. **Help > Log Files > View Current Log** shows what Hindsight heard, the
    question Claude found and its answer, with timings, plus where the clip was
-   saved as a WAV. Because the log holds what you said, check it before
-   sharing it publicly.
+   saved as a WAV. Hindsight keeps the last 10 clips; **Delete saved clips**
+   in Tools > Hindsight settings removes them all. Because the log holds what
+   you said, check it before sharing it publicly.
 
 ## Update notices
 

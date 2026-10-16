@@ -17,6 +17,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "settings-dialog.hpp"
+#include "clip-cleanup.hpp"
+#include "hindsight-filter.hpp"
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
 #include "update-check.hpp"
@@ -153,6 +155,22 @@ void open_settings_dialog(void *)
 		new QLabel(QString::fromUtf8(obs_module_text("Hindsight.CheckForUpdatesNote")), &dialog);
 	check_updates_note->setWordWrap(true);
 	layout->addWidget(check_updates_note);
+
+	// Deleting clips happens at once, not on Save: it has nothing to undo.
+	auto *clips_line = new QHBoxLayout();
+	auto *clips_note = new QLabel(QString::fromUtf8(obs_module_text("Hindsight.ClipsNote")), &dialog);
+	clips_note->setWordWrap(true);
+	auto *delete_clips = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.DeleteClips")), &dialog);
+	clips_line->addWidget(clips_note, 1);
+	clips_line->addWidget(delete_clips);
+	layout->addLayout(clips_line);
+	QObject::connect(delete_clips, &QPushButton::clicked, &dialog, [clips_note]() {
+		const std::string folder = hindsight_clips_folder();
+		const size_t deleted = folder.empty() ? 0 : delete_old_clips(folder, 0);
+		obs_log(LOG_INFO, "deleted %zu saved clips", deleted);
+		clips_note->setText(QString::fromUtf8(obs_module_text("Hindsight.ClipsDeleted"))
+					    .arg(static_cast<qulonglong>(deleted)));
+	});
 
 	auto *error = new QLabel(QString::fromUtf8(obs_module_text("Hindsight.SaveFailed")), &dialog);
 	error->setWordWrap(true);
