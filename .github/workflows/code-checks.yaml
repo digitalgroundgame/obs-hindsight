@@ -2,8 +2,8 @@ name: Code Checks
 run-name: ${{ github.event.pull_request.title || github.ref_name }} code checks 🧪
 on:
   workflow_dispatch:
-  push:
-    branches: [master, main]
+  # Pushes to main run these through push.yaml, so they gate the release.
+  workflow_call:
   pull_request:
     paths-ignore:
       - '**.md'
