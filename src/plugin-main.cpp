@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include "hindsight-filter.hpp"
+#include "plugin-settings.hpp"
 #include "secret-store.hpp"
 #include "settings-dialog.hpp"
 #include "update-check.hpp"
@@ -33,7 +34,10 @@ bool obs_module_load(void)
 	register_hindsight_filter();
 	register_settings_dialog();
 	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
-	update_check_start();
+	if (plugin_settings_check_for_updates())
+		update_check_start();
+	else
+		obs_log(LOG_INFO, "update check is turned off in Hindsight settings");
 	return true;
 }
 

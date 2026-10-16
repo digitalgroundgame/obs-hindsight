@@ -17,12 +17,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "settings-dialog.hpp"
+#include "plugin-settings.hpp"
 #include "secret-store.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <QCheckBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -96,6 +98,17 @@ void open_settings_dialog(void *)
 		}
 	});
 
+	// The update check reads this once when OBS starts, so a change here
+	// takes effect at the next start.
+	const bool was_checking = plugin_settings_check_for_updates();
+	auto *check_updates = new QCheckBox(QString::fromUtf8(obs_module_text("Hindsight.CheckForUpdates")), &dialog);
+	check_updates->setChecked(was_checking);
+	layout->addWidget(check_updates);
+	auto *check_updates_note =
+		new QLabel(QString::fromUtf8(obs_module_text("Hindsight.CheckForUpdatesNote")), &dialog);
+	check_updates_note->setWordWrap(true);
+	layout->addWidget(check_updates_note);
+
 	auto *error = new QLabel(QString::fromUtf8(obs_module_text("Hindsight.SaveFailed")), &dialog);
 	error->setWordWrap(true);
 	error->hide();
@@ -104,14 +117,18 @@ void open_settings_dialog(void *)
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
 	layout->addWidget(buttons);
 	QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&dialog, claude, discord, error]() {
+	// Every widget lives until exec() returns, so capturing by reference is safe.
+	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
 		typed.discord_bot_token = discord.edit->text().toStdString();
+		const bool checking = check_updates->isChecked();
 
 		// Blank boxes keep the saved key. On failure the window stays open
 		// so nothing typed is lost.
-		if (secret_store_save_typed(typed))
+		const bool setting_saved = checking == was_checking || plugin_settings_set_check_for_updates(checking);
+		const bool keys_saved = secret_store_save_typed(typed);
+		if (setting_saved && keys_saved)
 			dialog.accept();
 		else
 			error->show();

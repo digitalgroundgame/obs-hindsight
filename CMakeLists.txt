@@ -46,6 +46,8 @@ target_sources(
     src/plugin-main.cpp
     src/hindsight-filter.cpp
     src/hindsight-filter.hpp
+    src/plugin-settings.cpp
+    src/plugin-settings.hpp
     src/secret-store.cpp
     src/secret-store.hpp
     src/settings-dialog.cpp
