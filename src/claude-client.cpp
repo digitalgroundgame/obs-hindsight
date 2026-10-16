@@ -94,7 +94,8 @@ double seconds_until(CURL *curl, CURLINFO info)
 
 // Where the time in one request went, for the log: looking up the address,
 // connecting, the TLS handshake, then Claude's work until the first byte of
-// the reply. A step that shows 0 never finished.
+// the reply. A step that shows 0 never finished, or was skipped because the
+// request went out on a connection that was already open.
 std::string timings(CURL *curl)
 {
 	char line[160];
@@ -148,6 +149,8 @@ ClaudeAnswer send(CURL *curl, int number, const std::string &request, const std:
 		obs_log(LOG_WARNING, "Claude request %d couldn't connect after %s: %s; trying once more", number,
 			timings(curl).c_str(), curl_easy_strerror(result));
 		body.clear();
+		// curl restarts its timers for each transfer, so the timings logged
+		// below cover only this second attempt; the first is in the line above.
 		result = curl_easy_perform(curl);
 	}
 	long status = 0;
