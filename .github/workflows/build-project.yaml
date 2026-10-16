@@ -5,6 +5,11 @@ on:
       pluginName:
         description: Project name detected by parsing build spec file
         value: ${{ jobs.check-event.outputs.pluginName }}
+env:
+  # Link for the update notice's Download the update button, read by
+  # CMakeLists.txt. Set it under Settings > Secrets and variables > Actions >
+  # Variables; leave it unset to link to the latest GitHub release.
+  HINDSIGHT_UPDATE_URL: ${{ vars.HINDSIGHT_UPDATE_URL }}
 jobs:
   check-event:
     name: Check GitHub Event Data 🔎
