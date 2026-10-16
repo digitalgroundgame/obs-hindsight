@@ -24,7 +24,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // kept in a sealed file in the plugin's config folder (see secret-seal.hpp).
 // All functions are safe to call from any thread.
 
-// Reads the file once. Called from obs_module_load.
+// Reads the file. Called from obs_module_load. If the file exists but cannot
+// be read (locked, or encrypted for another account), every later change
+// first tries it again, so a Save never silently drops a key still in it.
 void secret_store_load();
 
 // A copy of the current keys.
@@ -36,7 +38,8 @@ Secrets secret_store_get();
 bool secret_store_save_typed(const Secrets &typed);
 
 // Saves keys found in 0.1.0's filter settings, but only into empty slots
-// (see fill_empty_keys). Returns false if the file could not be written.
+// (see fill_empty_keys). Returns false if the file could not be written, or
+// if it exists but could not be read, so the old keys are kept for later.
 bool secret_store_take_old_keys(const Secrets &old);
 
 // Clears one key and saves. Returns false if the file could not be written.
