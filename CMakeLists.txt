@@ -4,8 +4,8 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/common/bootstrap.cmake" NO_POLICY_SCO
 
 project(${_name} VERSION ${_version})
 
-option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" OFF)
-option(ENABLE_QT "Use Qt functionality" OFF)
+option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
+option(ENABLE_QT "Use Qt functionality" ON)
 
 include(compilerconfig)
 include(defaults)
@@ -38,7 +38,20 @@ include(src/hindsight-core.cmake)
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin-main.cpp src/hindsight-filter.cpp src/hindsight-filter.hpp ${HINDSIGHT_CORE_SOURCES}
+  PRIVATE
+    src/plugin-main.cpp
+    src/hindsight-filter.cpp
+    src/hindsight-filter.hpp
+    src/secret-store.cpp
+    src/secret-store.hpp
+    src/settings-dialog.cpp
+    src/settings-dialog.hpp
+    ${HINDSIGHT_CORE_SOURCES}
 )
+
+# DPAPI, which secret-seal.cpp uses to encrypt the saved keys.
+if(WIN32)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32)
+endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

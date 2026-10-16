@@ -18,19 +18,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "hindsight-filter.hpp"
 #include "audio-ring.hpp"
+#include "secret-store.hpp"
 #include "wav.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
 #include <util/platform.h>
+#include <util/task.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
-#include <ctime>
 #include <mutex>
 #include <string>
-#include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -38,6 +40,9 @@ namespace {
 constexpr int kDefaultWindowSeconds = 30;
 constexpr int kMinWindowSeconds = 5;
 constexpr int kMaxWindowSeconds = 30;
+
+// Clips waiting to be written.
+constexpr size_t kMaxPendingClips = 4;
 
 // One filter instance per source it is added to (normally just the mic).
 struct HindsightFilter {
@@ -52,17 +57,44 @@ struct HindsightFilter {
 	std::mutex lock;
 	AudioRing ring;
 
-	// Stored for the next steps; the spike does not use them yet.
-	std::string claude_api_key;
-	std::string discord_bot_token;
+	// The API keys are not here: every filter shares the ones in
+	// secret-store.cpp.
 	std::string discord_user_id;
+
+	// Writes clips one at a time, off the hotkey thread. destroy() finishes
+	// the queued clips before the filter goes away.
+	os_task_queue_t *clip_writer = nullptr;
+	std::atomic<size_t> pending_clips{0};
 };
 
-// Returns the buffered audio, oldest sample first.
+// One clip waiting for the clip writer.
+struct ClipJob {
+	HindsightFilter *filter;
+	std::vector<float> samples;
+	uint32_t sample_rate;
+	std::string name; // without the extension
+};
+
+// Returns the buffered audio, oldest sample first. filter_audio needs the
+// same lock on OBS's audio thread, so the few megabytes are allocated before
+// taking it and the lock is held only for the copy.
 std::vector<float> snapshot(HindsightFilter *filter)
 {
-	std::lock_guard<std::mutex> guard(filter->lock);
-	return filter->ring.snapshot();
+	std::vector<float> out;
+	for (;;) {
+		size_t capacity = 0;
+		{
+			std::lock_guard<std::mutex> guard(filter->lock);
+			// Retry if the ring grew since we reserved (the slider moved
+			// between the two locks), so the copy never allocates here.
+			if (out.capacity() >= filter->ring.capacity()) {
+				filter->ring.copy_to(out);
+				return out;
+			}
+			capacity = filter->ring.capacity();
+		}
+		out.reserve(capacity);
+	}
 }
 
 bool write_wav(const std::string &path, const std::vector<float> &samples, uint32_t sample_rate)
@@ -79,49 +111,103 @@ bool write_wav(const std::string &path, const std::vector<float> &samples, uint3
 	return fclose(file) == 0 && written;
 }
 
-std::string clip_path()
+// Returns a path in the clips folder that no file uses yet, or "" if OBS
+// cannot give the plugin a config folder. Only the clip writer calls it, so
+// two captures in the same second cannot pick the same name.
+std::string new_clip_path(const std::string &name)
 {
-	char name[64];
-	const time_t now = time(nullptr);
-	strftime(name, sizeof(name), "clips/hindsight-%Y%m%d-%H%M%S.wav", localtime(&now));
+	char *dir = obs_module_config_path("clips");
+	if (!dir)
+		return "";
+	os_mkdirs(dir);
+	const std::string folder = dir;
+	bfree(dir);
 
-	char *path = obs_module_config_path(name);
-	std::string result = path ? path : "";
-	bfree(path);
-	return result;
+	for (int copy = 1;; copy++) {
+		std::string path = folder;
+		path += "/";
+		path += name;
+		if (copy > 1)
+			path += "-" + std::to_string(copy);
+		path += ".wav";
+		if (!os_file_exists(path.c_str()))
+			return path;
+	}
+}
+
+// Runs on the clip writer's thread.
+void write_clip(void *param)
+{
+	auto *job = static_cast<ClipJob *>(param);
+	const std::string path = new_clip_path(job->name);
+	const double seconds = static_cast<double>(job->samples.size()) / job->sample_rate;
+
+	if (path.empty())
+		obs_log(LOG_ERROR, "could not find the plugin's config folder to save the clip");
+	else if (write_wav(path, job->samples, job->sample_rate))
+		obs_log(LOG_INFO, "saved %.1f s of audio to %s", seconds, path.c_str());
+	else
+		obs_log(LOG_ERROR, "could not write %s", path.c_str());
+
+	job->filter->pending_clips--;
+	delete job;
 }
 
 // What the hotkey will eventually do end to end. For the spike it saves the
 // buffered audio so we can listen to exactly what would be transcribed.
 void capture(HindsightFilter *filter)
 {
+	// Each clip holds up to 30 s of audio (about 6 MB), so don't let them
+	// pile up if the disk is slow.
+	if (++filter->pending_clips > kMaxPendingClips) {
+		filter->pending_clips--;
+		obs_log(LOG_WARNING, "still saving earlier clips; skipped this one");
+		return;
+	}
+
 	std::vector<float> samples = snapshot(filter);
 	if (samples.empty()) {
+		filter->pending_clips--;
 		obs_log(LOG_WARNING, "no audio buffered yet; is the filter on an active mic?");
 		return;
 	}
 
-	const uint32_t sample_rate = filter->sample_rate;
-	const std::string path = clip_path();
+	// Named for when the hotkey was pressed, the way OBS names recordings.
+	char *name = os_generate_formatted_filename(nullptr, false, "hindsight-%CCYY%MM%DD-%hh%mm%ss");
+	auto *job = new ClipJob{filter, std::move(samples), filter->sample_rate, name ? name : "hindsight"};
+	bfree(name);
 
 	// Writing a few megabytes to disk should not hold up the hotkey thread.
-	std::thread([samples = std::move(samples), sample_rate, path]() {
-		char *dir = obs_module_config_path("clips");
-		os_mkdirs(dir);
-		bfree(dir);
-
-		const double seconds = static_cast<double>(samples.size()) / sample_rate;
-		if (write_wav(path, samples, sample_rate))
-			obs_log(LOG_INFO, "saved %.1f s of audio to %s", seconds, path.c_str());
-		else
-			obs_log(LOG_ERROR, "could not write %s", path.c_str());
-	}).detach();
+	if (!os_task_queue_queue_task(filter->clip_writer, write_clip, job)) {
+		filter->pending_clips--;
+		delete job;
+		obs_log(LOG_ERROR, "could not queue the clip to be saved");
+	}
 }
 
 void on_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 {
 	if (pressed)
 		capture(static_cast<HindsightFilter *>(data));
+}
+
+// Keys are entered under Tools > Hindsight settings. Version 0.1.0 kept them in
+// the filter settings instead; move any found there into the shared secret
+// store (unless a key is already saved there), then remove them from the
+// settings and so from the scene collection.
+void take_keys_from_settings(obs_data_t *settings)
+{
+	Secrets old;
+	old.claude_api_key = obs_data_get_string(settings, kClaudeApiKeyName);
+	old.discord_bot_token = obs_data_get_string(settings, kDiscordBotTokenName);
+	if (old.claude_api_key.empty() && old.discord_bot_token.empty())
+		return;
+
+	// Leave the keys in the settings rather than lose them.
+	if (!secret_store_take_old_keys(old))
+		return;
+	obs_data_erase(settings, kClaudeApiKeyName);
+	obs_data_erase(settings, kDiscordBotTokenName);
 }
 
 bool on_save_clip_clicked(obs_properties_t *, obs_property_t *, void *data)
@@ -143,19 +229,34 @@ void update(void *data, obs_data_t *settings)
 				       kMinWindowSeconds, kMaxWindowSeconds);
 	const size_t size = static_cast<size_t>(seconds) * filter->sample_rate;
 
-	std::lock_guard<std::mutex> guard(filter->lock);
-	filter->claude_api_key = obs_data_get_string(settings, "claude_api_key");
-	filter->discord_bot_token = obs_data_get_string(settings, "discord_bot_token");
-	filter->discord_user_id = obs_data_get_string(settings, "discord_user_id");
+	take_keys_from_settings(settings);
 
-	if (filter->ring.capacity() != size)
-		filter->ring.reset(size);
+	// A resized ring is a few megabytes. Build it before taking the lock the
+	// audio thread waits on; the old one is freed with `resized` after the
+	// lock is released.
+	bool resize = false;
+	{
+		std::lock_guard<std::mutex> guard(filter->lock);
+		resize = filter->ring.capacity() != size;
+	}
+	AudioRing resized;
+	if (resize)
+		resized.reset(size);
+
+	std::string discord_user_id = obs_data_get_string(settings, "discord_user_id");
+
+	std::lock_guard<std::mutex> guard(filter->lock);
+	filter->discord_user_id = std::move(discord_user_id);
+
+	if (resize && filter->ring.capacity() != size)
+		std::swap(filter->ring, resized);
 }
 
 void *create(obs_data_t *settings, obs_source_t *source)
 {
 	auto *filter = new HindsightFilter();
 	filter->source = source;
+	filter->clip_writer = os_task_queue_create();
 
 	audio_t *audio = obs_get_audio();
 	filter->sample_rate = audio_output_get_sample_rate(audio);
@@ -173,6 +274,8 @@ void destroy(void *data)
 	auto *filter = static_cast<HindsightFilter *>(data);
 	if (filter->hotkey != OBS_INVALID_HOTKEY_ID)
 		obs_hotkey_unregister(filter->hotkey);
+	// Writes the clips still queued, then stops the thread.
+	os_task_queue_destroy(filter->clip_writer);
 	delete filter;
 }
 
@@ -201,9 +304,10 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
 	obs_property_text_set_info_type(note, OBS_TEXT_INFO_NORMAL);
 
-	obs_properties_add_text(props, "claude_api_key", obs_module_text("Hindsight.ClaudeApiKey"), OBS_TEXT_PASSWORD);
-	obs_properties_add_text(props, "discord_bot_token", obs_module_text("Hindsight.DiscordBotToken"),
-				OBS_TEXT_PASSWORD);
+	obs_property_t *keys_note =
+		obs_properties_add_text(props, "keys_note", obs_module_text("Hindsight.KeysNote"), OBS_TEXT_INFO);
+	obs_property_text_set_info_type(keys_note, OBS_TEXT_INFO_NORMAL);
+
 	obs_properties_add_text(props, "discord_user_id", obs_module_text("Hindsight.DiscordUserId"), OBS_TEXT_DEFAULT);
 	obs_properties_add_int_slider(props, "window_seconds", obs_module_text("Hindsight.WindowSeconds"),
 				      kMinWindowSeconds, kMaxWindowSeconds, 1);

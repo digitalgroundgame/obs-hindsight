@@ -40,6 +40,12 @@ public:
 	// Returns the buffered audio, oldest sample first.
 	std::vector<float> snapshot() const;
 
+	// Replaces the contents of out with the buffered audio, oldest sample
+	// first. Does not allocate when out.capacity() >= size(), so the filter
+	// can reserve the space before taking its lock and hold the lock only for
+	// the copy.
+	void copy_to(std::vector<float> &out) const;
+
 private:
 	std::vector<float> samples;
 	std::size_t write_pos = 0;

@@ -95,6 +95,53 @@ void reset_clears_buffered_audio()
 	CHECK(ring.snapshot().empty());
 }
 
+void copy_to_matches_snapshot_after_wrapping()
+{
+	AudioRing ring;
+	ring.reset(4);
+	push_mono(ring, {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f});
+
+	std::vector<float> out;
+	ring.copy_to(out);
+	CHECK(out == ring.snapshot());
+	CHECK(out == (std::vector<float>{3.0f, 4.0f, 5.0f, 6.0f}));
+}
+
+void copy_to_reuses_reserved_space()
+{
+	AudioRing ring;
+	ring.reset(4);
+	push_mono(ring, {1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
+
+	// The filter reserves before taking its lock; the copy must then not
+	// allocate, or the lock is held through a large allocation again.
+	std::vector<float> out = {9.0f, 9.0f};
+	out.reserve(ring.capacity());
+	const float *const reserved = out.data();
+	ring.copy_to(out);
+	CHECK(out.data() == reserved);
+	CHECK(out == (std::vector<float>{2.0f, 3.0f, 4.0f, 5.0f}));
+}
+
+void copy_to_shrinks_a_longer_out()
+{
+	AudioRing ring;
+	ring.reset(2);
+	push_mono(ring, {1.0f, 2.0f, 3.0f});
+
+	std::vector<float> out = {9.0f, 9.0f, 9.0f, 9.0f, 9.0f};
+	ring.copy_to(out);
+	CHECK(out == (std::vector<float>{2.0f, 3.0f}));
+}
+
+void copy_to_empties_out_for_an_unsized_ring()
+{
+	AudioRing ring;
+	std::vector<float> out = {1.0f};
+	ring.copy_to(out);
+	CHECK(out.empty());
+}
+
 } // namespace
 
 int main()
@@ -105,5 +152,9 @@ int main()
 	mixes_channels_to_mono();
 	treats_missing_channel_as_silence();
 	reset_clears_buffered_audio();
+	copy_to_matches_snapshot_after_wrapping();
+	copy_to_reuses_reserved_space();
+	copy_to_shrinks_a_longer_out();
+	copy_to_empties_out_for_an_unsized_ring();
 	return check::finish();
 }
