@@ -42,7 +42,7 @@ jobs:
             os: windows-2022
             sanitize: 'OFF'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build Tests 🧱
         run: |
@@ -61,7 +61,7 @@ jobs:
     name: clang-tidy 🔬
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Dependencies 🛍️
         run: |
