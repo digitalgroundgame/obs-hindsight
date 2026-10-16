@@ -92,6 +92,15 @@ void reads_api_errors()
 	CHECK(bad_key.error_type == "authentication_error");
 	CHECK(bad_key.error_message == "invalid x-api-key");
 
+	const ClaudeAnswer org_key = parse_claude_response(
+		400,
+		R"({"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header with the ID of the workspace to use."}})");
+	CHECK(org_key.error_type == kWorkspaceKeyError);
+
+	const ClaudeAnswer other_400 = parse_claude_response(
+		400, R"({"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too large"}})");
+	CHECK(other_400.error_type == "invalid_request_error");
+
 	const ClaudeAnswer busy = parse_claude_response(529, "<html>overloaded</html>");
 	CHECK(busy.outcome == ClaudeAnswer::Outcome::failed);
 	CHECK(busy.error_type == "http_529");
