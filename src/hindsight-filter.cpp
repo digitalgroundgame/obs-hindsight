@@ -278,17 +278,39 @@ void *create(obs_data_t *settings, obs_source_t *source)
 	filter->channels = audio_output_get_channels(audio);
 
 	update(filter, settings);
-
-	filter->hotkey = obs_hotkey_register_source(source, "hindsight.ask", obs_module_text("Hindsight.AskHotkey"),
-						    on_hotkey, filter);
 	return filter;
+}
+
+void unregister_hotkey(HindsightFilter *filter)
+{
+	if (filter->hotkey != OBS_INVALID_HOTKEY_ID)
+		obs_hotkey_unregister(filter->hotkey);
+	filter->hotkey = OBS_INVALID_HOTKEY_ID;
+}
+
+// The hotkey goes on the source the filter is added to, not on the filter.
+// OBS loads saved filters as private sources, which cannot have hotkeys, so a
+// hotkey on the filter vanished after a restart. On the mic it shows under the
+// mic's name in Settings > Hotkeys and is saved with the mic.
+void filter_add(void *data, obs_source_t *parent)
+{
+	auto *filter = static_cast<HindsightFilter *>(data);
+	unregister_hotkey(filter);
+	filter->hotkey = obs_hotkey_register_source(parent, "hindsight.ask", obs_module_text("Hindsight.AskHotkey"),
+						    on_hotkey, filter);
+	if (filter->hotkey == OBS_INVALID_HOTKEY_ID)
+		obs_log(LOG_WARNING, "could not add the hotkey to '%s'", obs_source_get_name(parent));
+}
+
+void filter_remove(void *data, obs_source_t *)
+{
+	unregister_hotkey(static_cast<HindsightFilter *>(data));
 }
 
 void destroy(void *data)
 {
 	auto *filter = static_cast<HindsightFilter *>(data);
-	if (filter->hotkey != OBS_INVALID_HOTKEY_ID)
-		obs_hotkey_unregister(filter->hotkey);
+	unregister_hotkey(filter);
 	// Writes the clips still queued, then stops the thread.
 	os_task_queue_destroy(filter->clip_writer);
 	delete filter;
@@ -386,6 +408,8 @@ void register_hindsight_filter()
 	info.get_defaults = get_defaults;
 	info.get_properties = get_properties;
 	info.filter_audio = filter_audio;
+	info.filter_add = filter_add;
+	info.filter_remove = filter_remove;
 
 	obs_register_source(&info);
 }
