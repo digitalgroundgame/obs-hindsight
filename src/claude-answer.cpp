@@ -115,7 +115,7 @@ std::string shorten_text(const std::string &text, size_t max_characters)
 	return text;
 }
 
-std::string build_claude_request(const std::string &transcript, const std::string &today,
+std::string build_claude_request(const std::string &transcript, const std::string &now,
 				 const std::string &paused_content, int max_searches)
 {
 	// strict keeps the tool's input to this exact shape now that Claude is no
@@ -139,7 +139,7 @@ std::string build_claude_request(const std::string &transcript, const std::strin
 
 	json messages = json::array({{
 		{"role", "user"},
-		{"content", (today.empty() ? std::string() : "Today's date: " + today + "\n\n") + "<transcript>\n" +
+		{"content", (now.empty() ? std::string() : "Current local time: " + now + "\n\n") + "<transcript>\n" +
 				    transcript + "\n</transcript>"},
 	}});
 	if (!paused_content.empty()) {

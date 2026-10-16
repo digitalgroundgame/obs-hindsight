@@ -48,16 +48,16 @@ constexpr int kClaudeMaxSearches = 3;
 constexpr size_t kMaxAnswerCharacters = 1700;
 
 // The JSON body for POST /v1/messages: the transcript of the last few seconds
-// of the streamer's mic, today's date (say "2026-10-16") so Claude knows what
-// "right now" means, the web search tool, and a tool Claude is told to call
-// with the question it found and its answer. Claude thinks first (adaptive
-// thinking).
+// of the streamer's mic, their local date and time (from local_time_text) so
+// Claude knows what "today" and "right now" mean, the web search tool, and a
+// tool Claude is told to call with the question it found and its answer.
+// Claude thinks first (adaptive thinking).
 //
 // paused_content resumes a turn the API paused (ClaudeAnswer::paused_content):
 // it goes back as the assistant's message, unchanged, and Claude carries on.
 // max_uses applies per request, so a resumed turn passes the searches it has
 // left as max_searches.
-std::string build_claude_request(const std::string &transcript, const std::string &today,
+std::string build_claude_request(const std::string &transcript, const std::string &now,
 				 const std::string &paused_content = {}, int max_searches = kClaudeMaxSearches);
 
 // The key is not scoped to a workspace, so the API wants an

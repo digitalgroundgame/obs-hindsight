@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "claude-client.hpp"
+#include "local-time.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -25,7 +26,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <cstddef>
 #include <cstdio>
-#include <ctime>
 #include <string>
 
 namespace {
@@ -66,22 +66,6 @@ ClaudeAnswer failed(const char *type, std::string message)
 	result.error_type = type;
 	result.error_message = std::move(message);
 	return result;
-}
-
-// The streamer's local date, like "2026-10-16".
-std::string today()
-{
-	const std::time_t now = std::time(nullptr);
-	std::tm local{};
-#ifdef _WIN32
-	localtime_s(&local, &now);
-#else
-	localtime_r(&now, &local);
-#endif
-	char date[16];
-	if (std::strftime(date, sizeof(date), "%Y-%m-%d", &local) == 0)
-		return {};
-	return date;
 }
 
 const char *outcome_name(ClaudeAnswer::Outcome outcome)
@@ -198,9 +182,9 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 	if (!curl)
 		return failed("network", "curl failed to start");
 
-	const std::string date = today();
+	const std::string now = local_time_text();
 	int requests = 1;
-	ClaudeAnswer answer = send(curl, requests, build_claude_request(transcript, date), api_key, cancel);
+	ClaudeAnswer answer = send(curl, requests, build_claude_request(transcript, now), api_key, cancel);
 	long long input_tokens = answer.input_tokens;
 	long long output_tokens = answer.output_tokens;
 	long long web_searches = answer.web_searches;
@@ -210,7 +194,7 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 		if (searches_left <= 0)
 			break;
 		answer = send(curl, ++requests,
-			      build_claude_request(transcript, date, answer.paused_content,
+			      build_claude_request(transcript, now, answer.paused_content,
 						   static_cast<int>(searches_left)),
 			      api_key, cancel);
 		input_tokens += answer.input_tokens;
