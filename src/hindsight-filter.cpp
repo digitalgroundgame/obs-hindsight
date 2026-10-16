@@ -51,9 +51,6 @@ constexpr int kMaxWindowSeconds = 30;
 // Clips waiting to be written.
 constexpr size_t kMaxPendingClips = 4;
 
-// Saved in the filter settings by 0.1.0 and 0.2.0; erased on load.
-constexpr const char *kDiscordUserIdName = "discord_user_id";
-
 // One filter instance per source it is added to (normally just the mic).
 struct HindsightFilter {
 	obs_source_t *source = nullptr;
@@ -73,6 +70,7 @@ struct HindsightFilter {
 
 	// The API keys are not here: every filter shares the ones in
 	// secret-store.cpp.
+	std::string discord_user_id;
 
 	// Writes clips one at a time, off the hotkey thread. destroy() finishes
 	// the queued clips before the filter goes away.
@@ -200,24 +198,22 @@ void on_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 }
 
 // Keys are entered under Tools > Hindsight settings. Version 0.1.0 kept them in
-// the filter settings instead; move a Claude key found there into the shared
-// secret store (unless one is already saved there), then remove it from the
-// settings and so from the scene collection. Answers now go through the DGG
-// server, so a Discord bot token or user ID left there is simply removed.
+// the filter settings instead; move any found there into the shared secret
+// store (unless a key is already saved there), then remove them from the
+// settings and so from the scene collection.
 void take_keys_from_settings(obs_data_t *settings)
 {
-	obs_data_erase(settings, kDiscordBotTokenName);
-	obs_data_erase(settings, kDiscordUserIdName);
-
 	Secrets old;
 	old.claude_api_key = obs_data_get_string(settings, kClaudeApiKeyName);
-	if (old.claude_api_key.empty())
+	old.discord_bot_token = obs_data_get_string(settings, kDiscordBotTokenName);
+	if (old.claude_api_key.empty() && old.discord_bot_token.empty())
 		return;
 
-	// Leave the key in the settings rather than lose it.
+	// Leave the keys in the settings rather than lose them.
 	if (!secret_store_take_old_keys(old))
 		return;
 	obs_data_erase(settings, kClaudeApiKeyName);
+	obs_data_erase(settings, kDiscordBotTokenName);
 }
 
 bool on_save_clip_clicked(obs_properties_t *, obs_property_t *, void *data)
@@ -255,7 +251,11 @@ void update(void *data, obs_data_t *settings)
 	if (resize)
 		resized.reset(size);
 
+	std::string discord_user_id = obs_data_get_string(settings, "discord_user_id");
+
 	std::lock_guard<std::mutex> guard(filter->lock);
+	filter->discord_user_id = std::move(discord_user_id);
+
 	if (resize && filter->ring.capacity() != size) {
 		resized.take_newest_from(filter->ring);
 		std::swap(filter->ring, resized);
@@ -417,6 +417,10 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
 	obs_property_text_set_info_type(note, OBS_TEXT_INFO_NORMAL);
 
+#ifndef HINDSIGHT_ACCESS_CODES
+	// With access codes, DGG Connect knows who to message.
+	obs_properties_add_text(props, "discord_user_id", obs_module_text("Hindsight.DiscordUserId"), OBS_TEXT_DEFAULT);
+#endif
 	obs_properties_add_int_slider(props, "window_seconds", obs_module_text("Hindsight.WindowSeconds"),
 				      kMinWindowSeconds, kMaxWindowSeconds, 1);
 	obs_properties_add_button2(props, "save_clip", obs_module_text("Hindsight.SaveClip"), on_save_clip_clicked,

@@ -38,20 +38,20 @@ void merge_takes_typed_keys()
 
 	CHECK(merge_typed_keys(stored, typed));
 	CHECK(stored.claude_api_key == "sk-new");
-	CHECK(stored.hindsight_code.empty());
+	CHECK(stored.discord_bot_token.empty());
 }
 
 void merge_keeps_saved_keys_for_blank_fields()
 {
 	Secrets stored;
 	stored.claude_api_key = "sk-saved";
-	stored.hindsight_code = "hs-saved";
+	stored.discord_bot_token = "tok-saved";
 	Secrets typed;
-	typed.hindsight_code = "   ";
+	typed.discord_bot_token = "   ";
 
 	CHECK(!merge_typed_keys(stored, typed));
 	CHECK(stored.claude_api_key == "sk-saved");
-	CHECK(stored.hindsight_code == "hs-saved");
+	CHECK(stored.discord_bot_token == "tok-saved");
 }
 
 void merge_reports_no_change_for_the_same_key()
@@ -70,11 +70,11 @@ void old_keys_fill_only_empty_slots()
 	stored.claude_api_key = "sk-new";
 	Secrets old;
 	old.claude_api_key = "sk-old";
-	old.hindsight_code = " hs-old\n";
+	old.discord_bot_token = " tok-old\n";
 
 	CHECK(fill_empty_keys(stored, old));
 	CHECK(stored.claude_api_key == "sk-new");
-	CHECK(stored.hindsight_code == "hs-old");
+	CHECK(stored.discord_bot_token == "tok-old");
 
 	// Nothing left to fill.
 	CHECK(!fill_empty_keys(stored, old));
@@ -85,16 +85,32 @@ void forgets_one_key()
 {
 	Secrets secrets;
 	secrets.claude_api_key = "sk-keep";
-	secrets.hindsight_code = "hs-drop";
+	secrets.discord_bot_token = "tok-drop";
 
-	CHECK(forget_key(secrets, SecretKey::HindsightCode));
+	CHECK(forget_key(secrets, SecretKey::DiscordBotToken));
 	CHECK(secrets.claude_api_key == "sk-keep");
-	CHECK(secrets.hindsight_code.empty());
+	CHECK(secrets.discord_bot_token.empty());
 
 	// Forgetting an empty key reports that nothing changed.
-	CHECK(!forget_key(secrets, SecretKey::HindsightCode));
+	CHECK(!forget_key(secrets, SecretKey::DiscordBotToken));
 	CHECK(forget_key(secrets, SecretKey::ClaudeApiKey));
 	CHECK(secrets.claude_api_key.empty());
+}
+
+void handles_the_hindsight_code()
+{
+	Secrets stored;
+	stored.discord_bot_token = "tok-saved";
+	Secrets typed;
+	typed.hindsight_code = " dgc-new\n";
+
+	CHECK(merge_typed_keys(stored, typed));
+	CHECK(stored.hindsight_code == "dgc-new");
+	CHECK(stored.discord_bot_token == "tok-saved");
+
+	CHECK(forget_key(stored, SecretKey::HindsightCode));
+	CHECK(stored.hindsight_code.empty());
+	CHECK(stored.discord_bot_token == "tok-saved");
 }
 
 void recognises_hindsight_codes()
@@ -108,8 +124,7 @@ void recognises_hindsight_codes()
 	CHECK(!is_hindsight_code("dgc_" + random.substr(1))); // pasted one short
 	CHECK(!is_hindsight_code("dgc_" + random + "A"));
 	CHECK(!is_hindsight_code("DGC_" + random));
-	CHECK(!is_hindsight_code("hs_" + random + "A")); // the old stream-widgets format
-	CHECK(!is_hindsight_code("sk_" + random));       // the wrong key in the box
+	CHECK(!is_hindsight_code("sk_" + random + "A")); // the wrong key in the box
 	CHECK(!is_hindsight_code("dgc_" + random.substr(1) + "="));
 	CHECK(!is_hindsight_code("dgc_" + random.substr(1) + "+"));
 }
@@ -124,6 +139,7 @@ int main()
 	merge_reports_no_change_for_the_same_key();
 	old_keys_fill_only_empty_slots();
 	forgets_one_key();
+	handles_the_hindsight_code();
 	recognises_hindsight_codes();
 	return check::finish();
 }

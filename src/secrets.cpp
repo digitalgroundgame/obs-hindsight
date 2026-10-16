@@ -49,6 +49,19 @@ bool is_hindsight_code(const std::string &code)
 
 namespace {
 
+std::string &key_slot(Secrets &secrets, SecretKey key)
+{
+	switch (key) {
+	case SecretKey::ClaudeApiKey:
+		return secrets.claude_api_key;
+	case SecretKey::DiscordBotToken:
+		return secrets.discord_bot_token;
+	case SecretKey::HindsightCode:
+		return secrets.hindsight_code;
+	}
+	return secrets.claude_api_key;
+}
+
 bool merge_one(std::string &stored, const std::string &typed)
 {
 	const std::string cleaned = clean_key(typed);
@@ -65,14 +78,14 @@ bool fill_empty_keys(Secrets &stored, const Secrets &old)
 	bool changed = false;
 	if (stored.claude_api_key.empty())
 		changed |= merge_one(stored.claude_api_key, old.claude_api_key);
-	if (stored.hindsight_code.empty())
-		changed |= merge_one(stored.hindsight_code, old.hindsight_code);
+	if (stored.discord_bot_token.empty())
+		changed |= merge_one(stored.discord_bot_token, old.discord_bot_token);
 	return changed;
 }
 
 bool forget_key(Secrets &secrets, SecretKey key)
 {
-	std::string &value = key == SecretKey::ClaudeApiKey ? secrets.claude_api_key : secrets.hindsight_code;
+	std::string &value = key_slot(secrets, key);
 	const bool had_value = !value.empty();
 	value.clear();
 	return had_value;
@@ -81,6 +94,7 @@ bool forget_key(Secrets &secrets, SecretKey key)
 bool merge_typed_keys(Secrets &stored, const Secrets &typed)
 {
 	const bool claude_changed = merge_one(stored.claude_api_key, typed.claude_api_key);
+	const bool discord_changed = merge_one(stored.discord_bot_token, typed.discord_bot_token);
 	const bool code_changed = merge_one(stored.hindsight_code, typed.hindsight_code);
-	return claude_changed || code_changed;
+	return claude_changed || discord_changed || code_changed;
 }

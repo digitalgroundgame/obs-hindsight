@@ -27,17 +27,17 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // and writing, and secret-seal.cpp encrypts the file.
 struct Secrets {
 	std::string claude_api_key;
-	// Links the plugin to the streamer's Discord account on the DGG server,
-	// which sends them the answers.
+	std::string discord_bot_token;
+	// Links the plugin to the streamer's Discord account on DGG Connect, which
+	// sends them the answers. Replaces the bot token once the
+	// HINDSIGHT_ACCESS_CODES build option is on.
 	std::string hindsight_code;
 };
 
 // The names used in the file and in 0.1.0's filter settings.
 constexpr const char *kClaudeApiKeyName = "claude_api_key";
-constexpr const char *kHindsightCodeName = "hindsight_code";
-// Saved by 0.1.0 and 0.2.0, before answers went through the DGG server. Only
-// read so it can be erased.
 constexpr const char *kDiscordBotTokenName = "discord_bot_token";
+constexpr const char *kHindsightCodeName = "hindsight_code";
 
 // Drops every whitespace character. Keys never contain any, and pasted keys
 // often carry a stray space or newline.
@@ -48,7 +48,7 @@ std::string clean_key(const std::string &key);
 bool is_hindsight_code(const std::string &code);
 
 // Which key, for forgetting one at a time.
-enum class SecretKey { ClaudeApiKey, HindsightCode };
+enum class SecretKey { ClaudeApiKey, DiscordBotToken, HindsightCode };
 
 // Copies each key the streamer typed over the stored one, skipping blank
 // fields so an empty box never erases a saved key. Returns whether anything

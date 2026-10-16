@@ -366,6 +366,11 @@ void open_settings_dialog(void *)
 	code.missing_text = "Hindsight.CodeMissing";
 	QObject::connect(get_code, &QPushButton::clicked, &dialog,
 			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetCodeUrl))); });
+#else
+	KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", &dialog);
+	discord.status = add_status_line(status, &dialog);
+	discord.saved_text = "Hindsight.DiscordTokenSaved";
+	discord.missing_text = "Hindsight.DiscordTokenMissing";
 #endif
 	add_note(keys, "Hindsight.SettingsNote", "Hindsight.SettingsNoteDetails", &dialog);
 	layout->addWidget(keys_box);
@@ -377,6 +382,8 @@ void open_settings_dialog(void *)
 	show_saved_state(claude, !saved.claude_api_key.empty());
 #ifdef HINDSIGHT_ACCESS_CODES
 	show_saved_state(code, !saved.hindsight_code.empty());
+#else
+	show_saved_state(discord, !saved.discord_bot_token.empty());
 #endif
 
 	QObject::connect(claude.forget, &QPushButton::clicked, &dialog, [claude]() {
@@ -390,6 +397,13 @@ void open_settings_dialog(void *)
 		if (secret_store_forget(SecretKey::HindsightCode)) {
 			code.edit->clear();
 			show_saved_state(code, false);
+		}
+	});
+#else
+	QObject::connect(discord.forget, &QPushButton::clicked, &dialog, [discord]() {
+		if (secret_store_forget(SecretKey::DiscordBotToken)) {
+			discord.edit->clear();
+			show_saved_state(discord, false);
 		}
 	});
 #endif
@@ -445,6 +459,8 @@ void open_settings_dialog(void *)
 			error->show();
 			return;
 		}
+#else
+		typed.discord_bot_token = discord.edit->text().toStdString();
 #endif
 
 		// Blank boxes keep the saved key. On failure the window stays open

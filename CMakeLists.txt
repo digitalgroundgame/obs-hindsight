@@ -6,8 +6,9 @@ project(${_name} VERSION ${_version})
 
 option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
 option(ENABLE_QT "Use Qt functionality" ON)
-# Shows the Hindsight code (from DGG Connect) in Tools > Hindsight settings.
-# Off until DGG Connect is live and Hindsight sends answers through it.
+# Asks for a Hindsight code from DGG Connect instead of a Discord bot token
+# (Tools > Hindsight settings) and Discord user ID (filter settings). Off until
+# DGG Connect is live and Hindsight sends answers through it.
 option(HINDSIGHT_ACCESS_CODES "Ask for a DGG Connect code in Hindsight settings" OFF)
 
 include(compilerconfig)
