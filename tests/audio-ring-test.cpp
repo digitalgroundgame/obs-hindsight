@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "audio-ring.hpp"
 #include "check.hpp"
 
+#include <utility>
 #include <vector>
 
 namespace {
@@ -172,6 +173,60 @@ void clear_keeps_capacity()
 	CHECK(ring.snapshot() == (std::vector<float>{6.0f, 7.0f}));
 }
 
+void clear_and_reset_zero_are_safe_when_empty()
+{
+	AudioRing ring;
+	ring.clear();
+	CHECK(ring.size() == 0);
+
+	ring.reset(4);
+	push_mono(ring, {1.0f, 2.0f});
+	ring.reset(0);
+	CHECK(ring.capacity() == 0);
+	CHECK(ring.size() == 0);
+	push_mono(ring, {3.0f});
+	CHECK(ring.snapshot().empty());
+}
+
+void move_takes_the_audio()
+{
+	AudioRing from;
+	from.reset(4);
+	push_mono(from, {1.0f, 2.0f, 3.0f});
+
+	AudioRing to(std::move(from));
+	CHECK(to.capacity() == 4);
+	CHECK(to.snapshot() == (std::vector<float>{1.0f, 2.0f, 3.0f}));
+	// Checks the moved-from ring on purpose.
+	// NOLINTBEGIN(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+	CHECK(from.capacity() == 0);
+	CHECK(from.size() == 0);
+	// The moved-from ring still works once given a size again.
+	from.reset(2);
+	push_mono(from, {4.0f, 5.0f, 6.0f});
+	CHECK(from.snapshot() == (std::vector<float>{5.0f, 6.0f}));
+	// NOLINTEND(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+}
+
+void swap_exchanges_the_audio()
+{
+	// The filter resizes by building a new ring and swapping it in.
+	AudioRing live;
+	live.reset(4);
+	push_mono(live, {1.0f, 2.0f});
+	AudioRing resized;
+	resized.reset(8);
+
+	std::swap(live, resized);
+	CHECK(live.capacity() == 8);
+	CHECK(live.size() == 0);
+	CHECK(resized.capacity() == 4);
+	CHECK(resized.snapshot() == (std::vector<float>{1.0f, 2.0f}));
+
+	push_mono(live, {3.0f});
+	CHECK(live.snapshot() == (std::vector<float>{3.0f}));
+}
+
 } // namespace
 
 int main()
@@ -188,5 +243,8 @@ int main()
 	copy_to_takes_only_the_newest();
 	copy_to_empties_out_for_an_unsized_ring();
 	clear_keeps_capacity();
+	clear_and_reset_zero_are_safe_when_empty();
+	move_takes_the_audio();
+	swap_exchanges_the_audio();
 	return check::finish();
 }

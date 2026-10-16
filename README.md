@@ -116,8 +116,11 @@ cmake --build build_tests
 ctest --test-dir build_tests --output-on-failure
 ```
 
-Code that OBS does not need to run, like the audio buffer, goes in its own
-file under `src/` without OBS includes, so it can be tested this way.
+Code that OBS does not need to run, like the WAV encoder, goes in its own
+file under `src/` without OBS includes, so it can be tested this way. The audio
+buffer is the one exception: it uses libobs's header-only `util/deque.h`, which
+the test build downloads for the OBS version in `buildspec.json` (so the first
+configure needs internet access).
 
 ## License
 

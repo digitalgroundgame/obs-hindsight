@@ -19,59 +19,75 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "audio-ring.hpp"
 
 #include <algorithm>
+#include <utility>
+
+AudioRing::AudioRing()
+{
+	deque_init(&queue);
+}
+
+AudioRing::~AudioRing()
+{
+	deque_free(&queue);
+}
+
+AudioRing::AudioRing(AudioRing &&other) noexcept : queue(other.queue), max_samples(other.max_samples)
+{
+	deque_init(&other.queue);
+	other.max_samples = 0;
+}
+
+AudioRing &AudioRing::operator=(AudioRing &&other) noexcept
+{
+	std::swap(queue, other.queue);
+	std::swap(max_samples, other.max_samples);
+	return *this;
+}
 
 void AudioRing::reset(std::size_t capacity)
 {
-	samples.assign(capacity, 0.0f);
-	write_pos = 0;
-	filled = 0;
+	deque_free(&queue);
+	deque_reserve(&queue, capacity * sizeof(float));
+	max_samples = capacity;
 }
 
 void AudioRing::clear()
 {
-	write_pos = 0;
-	filled = 0;
+	deque_pop_front(&queue, nullptr, queue.size);
 }
 
 void AudioRing::push_planar(const float *const *planes, std::size_t channels, std::size_t frames)
 {
-	const std::size_t size = samples.size();
-	if (size == 0 || channels == 0)
+	if (max_samples == 0 || channels == 0)
 		return;
 
 	for (std::size_t frame = 0; frame < frames; frame++) {
 		float sum = 0.0f;
 		for (std::size_t ch = 0; ch < channels; ch++)
 			sum += planes[ch] ? planes[ch][frame] : 0.0f;
+		const float sample = sum / static_cast<float>(channels);
 
-		samples[write_pos] = sum / static_cast<float>(channels);
-		write_pos = (write_pos + 1) % size;
-		filled = std::min(filled + 1, size);
+		// Drop the oldest sample first, so the queue never outgrows the
+		// space reset() reserved and never reallocates here.
+		if (size() == max_samples)
+			deque_pop_front(&queue, nullptr, sizeof(float));
+		deque_push_back(&queue, &sample, sizeof(float));
 	}
 }
 
 std::vector<float> AudioRing::snapshot() const
 {
 	std::vector<float> out;
-	out.reserve(filled);
+	out.reserve(size());
 	copy_to(out);
 	return out;
 }
 
 void AudioRing::copy_to(std::vector<float> &out, std::size_t newest) const
 {
-	out.clear();
-	const std::size_t size = samples.size();
-	const std::size_t count = std::min(filled, newest);
-	if (size == 0 || count == 0)
-		return;
-
-	// The copied audio is at most two runs: from start to the end of the
-	// vector, then wrapping around to the beginning.
-	const std::size_t start = (write_pos + size - count) % size;
-	const std::size_t first = std::min(count, size - start);
-	const auto begin = samples.begin();
-	out.insert(out.end(), begin + static_cast<std::ptrdiff_t>(start),
-		   begin + static_cast<std::ptrdiff_t>(start + first));
-	out.insert(out.end(), begin, begin + static_cast<std::ptrdiff_t>(count - first));
+	const std::size_t count = std::min(size(), newest);
+	out.resize(count);
+	if (count > 0)
+		// deque_peek_back only reads, but libobs declares it non-const.
+		deque_peek_back(const_cast<deque *>(&queue), out.data(), count * sizeof(float));
 }
