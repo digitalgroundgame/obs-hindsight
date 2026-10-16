@@ -11,6 +11,8 @@ set(
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/claude-answer.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/claude-answer.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/clip-cleanup.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/clip-cleanup.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-file.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-file.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/file-sha1.cpp"

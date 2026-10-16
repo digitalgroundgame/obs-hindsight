@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "answer-pipeline.hpp"
 #include "audio-freshness.hpp"
 #include "audio-ring.hpp"
+#include "clip-cleanup.hpp"
 #include "clip-file.hpp"
 #include "secret-store.hpp"
 #include "update-check.hpp"
@@ -121,26 +122,13 @@ bool write_wav(FILE *file, const std::vector<uint8_t> &bytes)
 	return fclose(file) == 0 && written;
 }
 
-// Returns the clips folder, or "" if OBS cannot give the plugin a config
-// folder.
-std::string clips_folder()
-{
-	char *dir = obs_module_config_path("clips");
-	if (!dir)
-		return "";
-	os_mkdirs(dir);
-	const std::string folder = dir;
-	bfree(dir);
-	return folder;
-}
-
 // Runs on the clip writer's thread. Each filter has its own clip writer, so
 // two filters can save a clip of the same name at once; create_new_file
 // gives each its own file.
 void write_clip(void *param)
 {
 	auto *job = static_cast<ClipJob *>(param);
-	const std::string folder = clips_folder();
+	const std::string folder = hindsight_clips_folder();
 	const double seconds = static_cast<double>(job->samples.size()) / job->sample_rate;
 
 	// Encoded before a name is taken, so a clip too long for WAV (encoded as
@@ -156,9 +144,11 @@ void write_clip(void *param)
 		if (!clip.file)
 			obs_log(LOG_ERROR, "could not create a file for %s.wav in %s", job->name.c_str(),
 				folder.c_str());
-		else if (write_wav(clip.file, bytes))
+		else if (write_wav(clip.file, bytes)) {
 			obs_log(LOG_INFO, "saved %.1f s of audio to %s", seconds, clip.path.c_str());
-		else
+			// Each clip is a few megabytes, so only the latest few are kept.
+			delete_old_clips(folder, kClipsToKeep);
+		} else
 			obs_log(LOG_ERROR, "could not write %s", clip.path.c_str());
 	}
 
@@ -455,6 +445,17 @@ obs_properties_t *get_properties(void *data)
 }
 
 } // namespace
+
+std::string hindsight_clips_folder()
+{
+	char *dir = obs_module_config_path("clips");
+	if (!dir)
+		return "";
+	os_mkdirs(dir);
+	const std::string folder = dir;
+	bfree(dir);
+	return folder;
+}
 
 void register_hindsight_filter()
 {
