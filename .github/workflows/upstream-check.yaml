@@ -8,7 +8,7 @@ permissions:
   issues: write
 jobs:
   check:
-    name: Check for template and OBS updates 🔎
+    name: Check for template, OBS and dependency updates 🔎
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -37,8 +37,36 @@ jobs:
             body+="  Bumping it needs new dependency hashes and a test build."$'\n'
           fi
 
+          # whisper.cpp, pinned by release and commit in src/whisper.cmake.
+          if [[ -f src/whisper.cmake ]]; then
+            whisper_pinned=$(sed -n 's/^set(_whisper_version \(v[^)]*\))$/\1/p' src/whisper.cmake)
+            whisper_latest=$(gh api repos/ggml-org/whisper.cpp/releases/latest --jq .tag_name)
+            if [[ -z "${whisper_pinned}" ]]; then
+              body+="- **whisper.cpp**: could not read \`_whisper_version\` from \`src/whisper.cmake\`, so this check needs updating."$'\n'
+            elif [[ "${whisper_pinned}" != "${whisper_latest}" ]]; then
+              body+="- **whisper.cpp ${whisper_latest}** is out; \`src/whisper.cmake\` pins ${whisper_pinned}: https://github.com/ggml-org/whisper.cpp/compare/${whisper_pinned}...${whisper_latest}"$'\n'
+              body+="  Bumping it means updating \`_whisper_version\` and \`_whisper_commit\`, checking the model SHA-1 against that release's models/README.md, and a test build."$'\n'
+            fi
+          fi
+
+          # GitHub Actions used by the workflows, pinned by major version
+          # (actions/checkout@v4) or by commit. Flag a new major version, or
+          # a newer release for a commit pin.
+          while read -r action ref; do
+            repo=$(cut -d/ -f1-2 <<< "${action}")
+            latest=$(gh api "repos/${repo}/releases/latest" --jq .tag_name 2>/dev/null) || continue
+            if [[ "${ref}" =~ ^[0-9a-f]{40}$ ]]; then
+              latest_sha=$(gh api "repos/${repo}/commits/${latest}" --jq .sha)
+              [[ "${ref}" == "${latest_sha}" ]] && continue
+              body+="- **${repo} ${latest}** is out; the workflows pin commit ${ref:0:7}: https://github.com/${repo}/compare/${ref}...${latest}"$'\n'
+            elif [[ "$(cut -d. -f1 <<< "${ref#v}")" != "$(cut -d. -f1 <<< "${latest#v}")" ]]; then
+              body+="- **${repo} ${latest}** is out; the workflows use @${ref}: https://github.com/${repo}/releases/tag/${latest}"$'\n'
+            fi
+          done < <(grep -rhoE 'uses: *[^./][^ @]*@[^ ]+' .github/workflows .github/actions \
+                     | sed -E 's/uses: *//; s/@/ /' | sort -u)
+
           if [[ -z "${body}" ]]; then
-            echo "Template and OBS are both current."
+            echo "Template, OBS, whisper.cpp and actions are all current."
             exit 0
           fi
 
