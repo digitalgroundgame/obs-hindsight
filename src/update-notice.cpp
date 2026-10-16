@@ -22,6 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
+#include <plugin-support.h>
 
 #include <atomic>
 
@@ -56,6 +57,10 @@ UpdateNotice update_notice_current()
 		return notice;
 	}
 
+	// Once the stream and recording have stopped, drop the "stop first" text.
+	if (waits_for_stream_end && !obs_frontend_streaming_active() && !obs_frontend_recording_active())
+		waits_for_stream_end = false;
+
 	const UpdateInstallState state = update_install_state();
 	const char *text_key = "Hindsight.UpdateReady";
 	if (waits_for_stream_end && state == UpdateInstallState::idle) {
@@ -80,4 +85,25 @@ void update_notice_update_now(obs_source_t *source)
 	waits_for_stream_end = obs_frontend_streaming_active() || obs_frontend_recording_active();
 	if (!waits_for_stream_end)
 		update_install_start(source);
+}
+
+std::string update_check_status_text()
+{
+	switch (update_check_state()) {
+	case UpdateCheckState::checking:
+		return obs_module_text("Hindsight.UpdateChecking");
+	case UpdateCheckState::up_to_date:
+		return with_version("Hindsight.UpToDate", PLUGIN_VERSION);
+	case UpdateCheckState::failed:
+		return obs_module_text("Hindsight.UpdateCheckFailed");
+	case UpdateCheckState::not_checked:
+	case UpdateCheckState::newer:
+		break;
+	}
+	return {};
+}
+
+bool update_check_running()
+{
+	return update_check_state() == UpdateCheckState::checking;
 }

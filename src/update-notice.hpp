@@ -36,6 +36,11 @@ struct UpdateNotice {
 
 UpdateNotice update_notice_current();
 
+// When there is no notice, the settings window offers Check for updates and
+// shows how the last check went (empty before any check).
+std::string update_check_status_text();
+bool update_check_running();
+
 // The Update now button. Starts update-install.cpp's download, unless OBS is
 // streaming or recording: the installer closes OBS, so the notice asks the
 // streamer to stop first. source is the filter whose settings to refresh as

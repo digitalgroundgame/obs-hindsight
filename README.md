@@ -100,8 +100,10 @@ OBS log. It does not message Discord yet.
 
 Each time OBS starts, Hindsight asks GitHub once for the latest release. If a
 newer one is out, the top of the Hindsight filter's settings and of **Tools >
-Hindsight settings** says so, and the OBS log notes it. If GitHub cannot be reached, Hindsight carries on without a
-notice.
+Hindsight settings** says so, and the OBS log notes it. If GitHub cannot be
+reached, Hindsight carries on without a notice. When there is no notice,
+**Tools > Hindsight settings** has a **Check for updates** button to ask again
+at any time.
 
 On Windows the notice has an **Update now** button. It downloads the new
 installer, checks its SHA-256 against the one GitHub lists for the release, and
