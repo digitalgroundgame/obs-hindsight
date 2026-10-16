@@ -134,6 +134,22 @@ void copy_to_shrinks_a_longer_out()
 	CHECK(out == (std::vector<float>{2.0f, 3.0f}));
 }
 
+void copy_to_takes_only_the_newest()
+{
+	AudioRing ring;
+	ring.reset(4);
+	push_mono(ring, {1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
+
+	std::vector<float> out;
+	ring.copy_to(out, 2);
+	CHECK(out == (std::vector<float>{4.0f, 5.0f}));
+	ring.copy_to(out, 0);
+	CHECK(out.empty());
+	// Asking for more than is buffered copies everything.
+	ring.copy_to(out, 10);
+	CHECK(out == (std::vector<float>{2.0f, 3.0f, 4.0f, 5.0f}));
+}
+
 void copy_to_empties_out_for_an_unsized_ring()
 {
 	AudioRing ring;
@@ -169,6 +185,7 @@ int main()
 	copy_to_matches_snapshot_after_wrapping();
 	copy_to_reuses_reserved_space();
 	copy_to_shrinks_a_longer_out();
+	copy_to_takes_only_the_newest();
 	copy_to_empties_out_for_an_unsized_ring();
 	clear_keeps_capacity();
 	return check::finish();
