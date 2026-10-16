@@ -119,6 +119,8 @@ void AudioRing::take_newest_from(const AudioRing &other)
 		return;
 
 	clear();
+	// Keep the mixdown level steady across the resize (see push_planar).
+	heard = other.heard;
 	const std::size_t bytes = std::min(other.size(), max_samples) * sizeof(float);
 	if (bytes == 0)
 		return;

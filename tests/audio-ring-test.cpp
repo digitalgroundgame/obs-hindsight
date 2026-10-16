@@ -157,6 +157,24 @@ void reset_forgets_which_channels_were_heard()
 	CHECK(ring.snapshot() == (std::vector<float>{1.0f}));
 }
 
+void take_newest_from_keeps_which_channels_were_heard()
+{
+	AudioRing live;
+	live.reset(8);
+	const std::vector<float> one = {1.0f};
+	const std::vector<float> zero = {0.0f};
+	const float *both[] = {one.data(), one.data()};
+	live.push_planar(both, 2, 1);
+
+	// Moving the window slider must not make the mic jump in level.
+	AudioRing resized;
+	resized.reset(8);
+	resized.take_newest_from(live);
+	const float *left_only[] = {one.data(), zero.data()};
+	resized.push_planar(left_only, 2, 1);
+	CHECK(resized.snapshot() == (std::vector<float>{1.0f, 0.5f}));
+}
+
 void reset_clears_buffered_audio()
 {
 	AudioRing ring;
@@ -393,5 +411,6 @@ int main()
 	take_newest_from_keeps_all_when_growing();
 	take_newest_from_keeps_newest_when_shrinking();
 	take_newest_from_replaces_what_was_there();
+	take_newest_from_keeps_which_channels_were_heard();
 	return check::finish();
 }

@@ -71,7 +71,8 @@ public:
 
 	// Replaces the buffered audio with the newest samples of other, as many
 	// as fit, oldest first. Never allocates: reset() already reserved the
-	// space. Lets the filter resize the ring without losing what it heard.
+	// space. Lets the filter resize the ring without losing what it heard,
+	// including which channels it has heard the mic on.
 	void take_newest_from(const AudioRing &other);
 
 private:
