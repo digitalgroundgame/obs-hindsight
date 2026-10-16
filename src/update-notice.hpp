@@ -32,6 +32,7 @@ struct UpdateNotice {
 	bool offer_update_now = false;   // Windows, with an installer to download
 	bool update_now_enabled = false; // false while downloading
 	bool offer_release_page = false; // a link to the release page instead
+	int percent = -1;                // 0 to 100 while downloading, else -1
 };
 
 UpdateNotice update_notice_current();

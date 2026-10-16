@@ -44,6 +44,10 @@ void update_install_start(obs_source_t *source);
 
 UpdateInstallState update_install_state();
 
+// How much of the installer has downloaded, 0 to 100, or -1 when no
+// download is running. Safe to call from any thread.
+int update_install_percent();
+
 // Cancels a download and waits for its thread. Call from obs_module_unload,
 // before curl is shut down.
 void update_install_stop();

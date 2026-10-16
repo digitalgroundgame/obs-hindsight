@@ -67,6 +67,7 @@ UpdateNotice update_notice_current()
 		text_key = "Hindsight.UpdateStopStreamFirst";
 	} else if (state == UpdateInstallState::downloading) {
 		text_key = "Hindsight.UpdateDownloading";
+		notice.percent = update_install_percent();
 	} else if (state == UpdateInstallState::started) {
 		text_key = "Hindsight.UpdateStarted";
 	} else if (state == UpdateInstallState::failed) {
@@ -75,6 +76,12 @@ UpdateNotice update_notice_current()
 		notice.offer_release_page = true;
 	}
 	notice.text = with_version(text_key, version);
+	if (notice.percent >= 0) {
+		const std::string placeholder = "{percent}";
+		const size_t at = notice.text.find(placeholder);
+		if (at != std::string::npos)
+			notice.text.replace(at, placeholder.size(), std::to_string(notice.percent));
+	}
 	notice.offer_update_now = true;
 	notice.update_now_enabled = state != UpdateInstallState::downloading;
 	return notice;
