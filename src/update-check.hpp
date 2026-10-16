@@ -26,8 +26,19 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // The request runs on its own thread so it never slows OBS down, and any
 // failure (offline, private repo, rate limit) just means no notice.
 
-// Starts the check. Call from obs_module_load, after curl_global_init.
+enum class UpdateCheckState {
+	not_checked, // turned off in settings, and no one clicked Check for updates
+	checking,
+	up_to_date,
+	newer, // update_check_newer_version() names it
+	failed,
+};
+
+// Starts a check, unless one is running. Call after curl_global_init, from
+// obs_module_load or from the UI thread for the Check for updates button.
 void update_check_start();
+
+UpdateCheckState update_check_state();
 
 // Cancels the check if it is still running and waits for its thread. Call
 // from obs_module_unload.

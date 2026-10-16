@@ -62,6 +62,8 @@ target_sources(
     src/update-check.hpp
     src/update-install.cpp
     src/update-install.hpp
+    src/update-notice.cpp
+    src/update-notice.hpp
     ${HINDSIGHT_CORE_SOURCES}
     src/claude-client.cpp
     src/claude-client.hpp
