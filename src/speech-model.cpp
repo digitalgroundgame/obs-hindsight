@@ -72,10 +72,10 @@ std::string config_path(const char *file)
 	return result;
 }
 
-void set_ready(const ModelFile &model, const std::string &path)
+void set_ready(std::string &ready_path, const std::string &path)
 {
 	std::lock_guard<std::mutex> guard(ready_lock);
-	(&model == &kVadModel ? ready_vad_path : ready_speech_path) = path;
+	ready_path = path;
 }
 
 size_t write_file(char *data, size_t size, size_t count, void *user)
@@ -159,9 +159,9 @@ bool download(const ModelFile &model, const std::string &path)
 	return true;
 }
 
-// Makes sure one model is on disk and intact, downloading it if not. Returns
-// whether it is ready.
-bool fetch(const ModelFile &model)
+// Makes sure one model is on disk and intact, downloading it if not, then
+// publishes its path in ready_path. Returns whether it is ready.
+bool fetch(const ModelFile &model, std::string &ready_path)
 {
 	const std::string path = config_path(model.file);
 	if (path.empty())
@@ -171,7 +171,7 @@ bool fetch(const ModelFile &model)
 	// loads OBS, in case it was damaged since.
 	if (os_file_exists(path.c_str())) {
 		if (is_expected_model(model, path)) {
-			set_ready(model, path);
+			set_ready(ready_path, path);
 			return true;
 		}
 		obs_log(LOG_WARNING, "the saved %s is damaged; downloading it again", model.what);
@@ -183,7 +183,7 @@ bool fetch(const ModelFile &model)
 	if (!download(model, path))
 		return false;
 	obs_log(LOG_INFO, "%s downloaded in %.0f s", model.what, static_cast<double>(os_gettime_ns() - start) / 1e9);
-	set_ready(model, path);
+	set_ready(ready_path, path);
 	return true;
 }
 
@@ -191,9 +191,9 @@ void run_downloads()
 {
 	// The speech model first: transcription works without voice detection,
 	// only slower.
-	fetch(kSpeechModel);
+	fetch(kSpeechModel, ready_speech_path);
 	if (!stopping.load())
-		fetch(kVadModel);
+		fetch(kVadModel, ready_vad_path);
 }
 
 } // namespace

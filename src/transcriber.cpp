@@ -106,8 +106,10 @@ void on_whisper_log(ggml_log_level level, const char *text, void *)
 	if (line.substr(0, timings.size()) == timings && line.find("load time") == std::string_view::npos &&
 	    line.find("total time") == std::string_view::npos) {
 		std::string_view detail = line.substr(timings.size());
-		while (!detail.empty() && (detail.front() == ' ' || detail.back() == '\n'))
-			detail = detail.front() == ' ' ? detail.substr(1) : detail.substr(0, detail.size() - 1);
+		const size_t first = detail.find_first_not_of(' ');
+		detail = first == std::string_view::npos ? std::string_view() : detail.substr(first);
+		const size_t last = detail.find_last_not_of('\n');
+		detail = detail.substr(0, last == std::string_view::npos ? 0 : last + 1);
 		obs_log(LOG_INFO, "whisper %.*s", static_cast<int>(detail.size()), detail.data());
 	}
 }
@@ -241,6 +243,7 @@ Transcript transcribe(const std::vector<float> &samples, uint32_t sample_rate, c
 		obs_log(LOG_WARNING, "voice detection failed; transcribing the whole clip instead");
 		params.vad = false;
 		params.vad_model_path = nullptr;
+		whisper_reset_timings(model); // so the timings below are this run's alone
 		status = whisper_full(model, params, audio.data(), static_cast<int>(audio.size()));
 	}
 	if (cancel.load() || unloading.load()) {
