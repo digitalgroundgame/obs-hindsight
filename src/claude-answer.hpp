@@ -60,7 +60,19 @@ struct ClaudeAnswer {
 	// if it sent one.
 	std::string error_type;
 	std::string error_message;
+
+	// Tokens the request was billed for, from the reply's usage (0 if absent).
+	long long input_tokens = 0;
+	long long output_tokens = 0;
 };
+
+// What a request to kClaudeModel cost in US dollars, at its list prices for
+// prompts under 100,000 tokens (Hindsight's are far shorter):
+// https://platform.claude.com/docs/en/about-claude/pricing
+// Update these along with kClaudeModel.
+constexpr double kClaudeInputDollarsPerMillion = 0.10;
+constexpr double kClaudeOutputDollarsPerMillion = 0.50;
+double claude_cost_dollars(long long input_tokens, long long output_tokens);
 
 // Cuts text longer than max_characters (Unicode code points) to fit,
 // ending it with "…". Never splits a UTF-8 character.
