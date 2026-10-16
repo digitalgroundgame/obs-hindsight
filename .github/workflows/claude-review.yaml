@@ -13,8 +13,12 @@ concurrency:
 jobs:
   review:
     name: Review pull request
-    # Skip drafts, and PRs from forks (they cannot read the auth secret).
-    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    # Skip drafts, and PRs from forks and Dependabot (they cannot read the
+    # auth secret).
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
