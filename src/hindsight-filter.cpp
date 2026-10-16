@@ -383,10 +383,12 @@ void add_update_notice(obs_properties_t *props, HindsightFilter *filter)
 void add_ready_line(obs_properties_t *props)
 {
 	const SpeechModelStatus model = speech_model_status();
-	const bool speech_failed = model.state == SpeechModelStatus::State::failed &&
-				   model.model == SpeechModelStatus::Model::speech;
-	const bool speech_busy = model.state == SpeechModelStatus::State::checking ||
-				 model.state == SpeechModelStatus::State::downloading;
+	// Only the speech model matters here: without voice detection Hindsight
+	// still transcribes, just slower.
+	const bool speech = model.model == SpeechModelStatus::Model::speech;
+	const bool speech_failed = speech && model.state == SpeechModelStatus::State::failed;
+	const bool speech_busy = speech && (model.state == SpeechModelStatus::State::checking ||
+					    model.state == SpeechModelStatus::State::downloading);
 
 	const char *key = "Hindsight.FilterReady";
 	enum obs_text_info_type type = OBS_TEXT_INFO_NORMAL;
