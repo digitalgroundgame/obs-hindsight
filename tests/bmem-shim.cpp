@@ -22,17 +22,24 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <util/bmem.h>
 
+#include <cstddef>
 #include <cstdlib>
+
+// How many times the deque asked for memory, so a test can check that
+// something did not allocate. Declared where it is used.
+std::size_t bmem_shim_allocations = 0;
 
 extern "C" {
 
 void *bmalloc(size_t size)
 {
+	bmem_shim_allocations++;
 	return std::malloc(size ? size : 1);
 }
 
 void *brealloc(void *ptr, size_t size)
 {
+	bmem_shim_allocations++;
 	return std::realloc(ptr, size ? size : 1);
 }
 

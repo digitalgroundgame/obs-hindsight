@@ -247,8 +247,9 @@ void update(void *data, obs_data_t *settings)
 	take_keys_from_settings(settings);
 
 	// A resized ring is a few megabytes. Build it before taking the lock the
-	// audio thread waits on; the old one is freed with `resized` after the
-	// lock is released.
+	// audio thread waits on, then copy the newest audio into it under the
+	// lock so changing the window keeps what was heard. The old one is freed
+	// with `resized` after the lock is released.
 	bool resize = false;
 	{
 		std::lock_guard<std::mutex> guard(filter->lock);
@@ -263,8 +264,10 @@ void update(void *data, obs_data_t *settings)
 	std::lock_guard<std::mutex> guard(filter->lock);
 	filter->discord_user_id = std::move(discord_user_id);
 
-	if (resize && filter->ring.capacity() != size)
+	if (resize && filter->ring.capacity() != size) {
+		resized.take_newest_from(filter->ring);
 		std::swap(filter->ring, resized);
+	}
 }
 
 void *create(obs_data_t *settings, obs_source_t *source)
