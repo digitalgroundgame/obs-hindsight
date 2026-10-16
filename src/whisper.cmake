@@ -35,6 +35,13 @@ function(hindsight_add_whisper target)
   set(GGML_CCACHE OFF)
   # Third-party code: its warnings are not ours to fail the build on.
   set(CMAKE_COMPILE_WARNING_AS_ERROR OFF)
+  # ggml picks its x86 code from the Visual Studio platform, which it expects
+  # to be exactly "x64". OBS's build passes "x64,version=<Windows SDK>", so
+  # ggml would fall back to plain C with no AVX2, several times slower. Only
+  # this function's scope sees the trimmed name.
+  if(CMAKE_GENERATOR_PLATFORM MATCHES "^([^,]+),")
+    set(CMAKE_GENERATOR_PLATFORM "${CMAKE_MATCH_1}")
+  endif()
 
   FetchContent_Declare(
     whisper
@@ -55,6 +62,12 @@ function(hindsight_add_whisper target)
   )
   if(NOT _head STREQUAL _whisper_commit)
     message(FATAL_ERROR "whisper.cpp ${_whisper_version} is commit ${_head}, expected ${_whisper_commit}")
+  endif()
+
+  # Fails the build if ggml fell back to its slow generic CPU code.
+  get_target_property(_cpu_options ggml-cpu COMPILE_OPTIONS)
+  if(_cpu_options MATCHES "GGML_CPU_GENERIC")
+    message(FATAL_ERROR "ggml did not detect an x86-64 target, so whisper.cpp would be built without AVX2")
   endif()
 
   target_link_libraries(${target} PRIVATE whisper)
