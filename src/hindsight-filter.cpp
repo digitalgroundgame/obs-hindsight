@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "hindsight-filter.hpp"
 #include "audio-freshness.hpp"
 #include "audio-ring.hpp"
+#include "clip-file.hpp"
 #include "secret-store.hpp"
 #include "update-check.hpp"
 #include "wav.hpp"
@@ -110,24 +111,16 @@ std::vector<float> snapshot(HindsightFilter *filter)
 	return out;
 }
 
-bool write_wav(const std::string &path, const std::vector<float> &samples, uint32_t sample_rate)
+// Writes an encoded WAV file to file, and closes it.
+bool write_wav(FILE *file, const std::vector<uint8_t> &bytes)
 {
-	if (!wav_fits(samples.size()))
-		return false;
-	const std::vector<uint8_t> bytes = encode_wav(samples, sample_rate);
-
-	FILE *file = os_fopen(path.c_str(), "wb");
-	if (!file)
-		return false;
-
 	const bool written = fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
 	return fclose(file) == 0 && written;
 }
 
-// Returns a path in the clips folder that no file uses yet, or "" if OBS
-// cannot give the plugin a config folder. Only the clip writer calls it, so
-// two captures in the same second cannot pick the same name.
-std::string new_clip_path(const std::string &name)
+// Returns the clips folder, or "" if OBS cannot give the plugin a config
+// folder.
+std::string clips_folder()
 {
 	char *dir = obs_module_config_path("clips");
 	if (!dir)
@@ -135,32 +128,36 @@ std::string new_clip_path(const std::string &name)
 	os_mkdirs(dir);
 	const std::string folder = dir;
 	bfree(dir);
-
-	for (int copy = 1;; copy++) {
-		std::string path = folder;
-		path += "/";
-		path += name;
-		if (copy > 1)
-			path += "-" + std::to_string(copy);
-		path += ".wav";
-		if (!os_file_exists(path.c_str()))
-			return path;
-	}
+	return folder;
 }
 
-// Runs on the clip writer's thread.
+// Runs on the clip writer's thread. Each filter has its own clip writer, so
+// two filters can save a clip of the same name at once; create_new_file
+// gives each its own file.
 void write_clip(void *param)
 {
 	auto *job = static_cast<ClipJob *>(param);
-	const std::string path = new_clip_path(job->name);
+	const std::string folder = clips_folder();
 	const double seconds = static_cast<double>(job->samples.size()) / job->sample_rate;
 
-	if (path.empty())
+	// Encoded before a name is taken, so a clip too long for WAV (encoded as
+	// nothing) leaves no empty file behind.
+	const std::vector<uint8_t> bytes = encode_wav(job->samples, job->sample_rate);
+
+	if (folder.empty()) {
 		obs_log(LOG_ERROR, "could not find the plugin's config folder to save the clip");
-	else if (write_wav(path, job->samples, job->sample_rate))
-		obs_log(LOG_INFO, "saved %.1f s of audio to %s", seconds, path.c_str());
-	else
-		obs_log(LOG_ERROR, "could not write %s", path.c_str());
+	} else if (bytes.empty()) {
+		obs_log(LOG_ERROR, "%.1f s of audio is too long to save as a WAV file", seconds);
+	} else {
+		NewFile clip = create_new_file(folder, job->name, ".wav");
+		if (!clip.file)
+			obs_log(LOG_ERROR, "could not create a file for %s.wav in %s", job->name.c_str(),
+				folder.c_str());
+		else if (write_wav(clip.file, bytes))
+			obs_log(LOG_INFO, "saved %.1f s of audio to %s", seconds, clip.path.c_str());
+		else
+			obs_log(LOG_ERROR, "could not write %s", clip.path.c_str());
+	}
 
 	job->filter->pending_clips--;
 	delete job;
@@ -247,8 +244,9 @@ void update(void *data, obs_data_t *settings)
 	take_keys_from_settings(settings);
 
 	// A resized ring is a few megabytes. Build it before taking the lock the
-	// audio thread waits on; the old one is freed with `resized` after the
-	// lock is released.
+	// audio thread waits on, then copy the newest audio into it under the
+	// lock so changing the window keeps what was heard. The old one is freed
+	// with `resized` after the lock is released.
 	bool resize = false;
 	{
 		std::lock_guard<std::mutex> guard(filter->lock);
@@ -263,8 +261,10 @@ void update(void *data, obs_data_t *settings)
 	std::lock_guard<std::mutex> guard(filter->lock);
 	filter->discord_user_id = std::move(discord_user_id);
 
-	if (resize && filter->ring.capacity() != size)
+	if (resize && filter->ring.capacity() != size) {
+		resized.take_newest_from(filter->ring);
 		std::swap(filter->ring, resized);
+	}
 }
 
 void *create(obs_data_t *settings, obs_source_t *source)
