@@ -213,13 +213,12 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 	}
 
 	const std::string stop_reason = string_at(reply, "stop_reason");
-	// Claude may still answer in plain text instead of calling the tool, now
-	// that the call is no longer forced. Send that text as the answer, with
-	// no question, rather than drop it.
-	text = trimmed(text);
-	if (stop_reason == "end_turn" && !text.empty()) {
-		result.answer = shorten_text(text, kMaxAnswerCharacters);
-		result.outcome = ClaudeAnswer::Outcome::answered;
+	// Now that the call is not forced, Claude may reply in plain text
+	// instead. That is most often a remark that there is no question ("I
+	// don't see a question"), which must not reach the streamer, so plain
+	// text counts as no question.
+	if (stop_reason == "end_turn" && !trimmed(text).empty()) {
+		result.outcome = ClaudeAnswer::Outcome::no_question;
 		return result;
 	}
 	// Claude stopped before answering, say at max_tokens or with a refusal.

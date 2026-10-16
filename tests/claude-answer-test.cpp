@@ -89,24 +89,19 @@ void skips_thinking_blocks()
 	CHECK(answer.answer == "A.");
 }
 
-void plain_text_reply_is_the_answer()
+void plain_text_reply_sends_nothing()
 {
-	// Claude answered without calling the tool: the text is sent, with no question.
-	const ClaudeAnswer answer = parse_claude_response(
+	// Claude replied without calling the tool, most likely to say there is no
+	// question. That remark must not reach the streamer.
+	const ClaudeAnswer remark = parse_claude_response(
 		200,
-		R"({"stop_reason":"end_turn","content":[{"type":"thinking","thinking":"","signature":"abc"},{"type":"text","text":" 1989, "},{"type":"text","text":"on November 9.\n"}],"usage":{"input_tokens":10,"output_tokens":20}})");
-	CHECK(answer.outcome == ClaudeAnswer::Outcome::answered);
-	CHECK(answer.question.empty());
-	CHECK(answer.answer == "1989, on November 9.");
-	CHECK(answer.output_tokens == 20);
+		R"({"stop_reason":"end_turn","content":[{"type":"thinking","thinking":"","signature":"abc"},{"type":"text","text":"I don't see a question in this transcript."}],"usage":{"input_tokens":10,"output_tokens":20}})");
+	CHECK(remark.outcome == ClaudeAnswer::Outcome::no_question);
+	CHECK(remark.question.empty());
+	CHECK(remark.answer.empty());
+	CHECK(remark.output_tokens == 20);
 
-	const std::string long_text(kMaxAnswerCharacters + 10, 'a');
-	const ClaudeAnswer long_answer = parse_claude_response(
-		200,
-		json({{"stop_reason", "end_turn"}, {"content", {{{"type", "text"}, {"text", long_text}}}}}).dump());
-	CHECK(long_answer.answer.size() == kMaxAnswerCharacters - 1 + 3);
-
-	// Only thinking and no text has nothing to send.
+	// Only thinking and no text cannot be read at all.
 	const ClaudeAnswer silent = parse_claude_response(
 		200, R"({"stop_reason":"end_turn","content":[{"type":"thinking","thinking":"","signature":"abc"}]})");
 	CHECK(silent.outcome == ClaudeAnswer::Outcome::failed);
@@ -219,7 +214,7 @@ int main()
 		request_survives_bad_utf8();
 		reads_the_question_and_answer();
 		skips_thinking_blocks();
-		plain_text_reply_is_the_answer();
+		plain_text_reply_sends_nothing();
 		reads_the_usage_and_cost();
 		empty_fields_mean_no_question();
 		reads_api_errors();

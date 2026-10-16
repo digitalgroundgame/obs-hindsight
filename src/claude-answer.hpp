@@ -53,10 +53,8 @@ inline constexpr const char *kWorkspaceKeyError = "workspace_key";
 
 struct ClaudeAnswer {
 	enum class Outcome {
-		// answer is set, and question too unless Claude replied in plain
-		// text instead of calling the tool
-		answered,
-		no_question, // Claude found no clear question; send nothing
+		answered,    // question and answer are set
+		no_question, // no clear question, or a plain-text reply; send nothing
 		failed,      // see error_type and error_message
 	};
 	Outcome outcome = Outcome::failed;
