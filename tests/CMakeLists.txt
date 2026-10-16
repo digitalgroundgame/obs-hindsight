@@ -1,6 +1,8 @@
 # Unit tests for the parts of Hindsight that run without OBS. This is its own
 # small project so it builds in seconds, downloading only the four libobs
-# headers AudioRing's deque needs instead of all of OBS:
+# headers AudioRing's deque needs instead of all of OBS. The first configure
+# needs internet to fetch them; after that they are cached in the build folder
+# and the tests build offline:
 #
 #   cmake -S tests -B build_tests
 #   cmake --build build_tests
