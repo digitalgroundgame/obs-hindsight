@@ -97,7 +97,7 @@ size_t write_chunk(char *data, size_t size, size_t count, void *user)
 
 	// The filter's settings show the percentage as text, so redraw them
 	// every 10% rather than on every chunk.
-	const int now = static_cast<int>(download->received * 100 / download->expected);
+	const int now = download->expected ? static_cast<int>(download->received * 100 / download->expected) : 0;
 	const int before = percent.exchange(now);
 	if (now / 10 != before / 10)
 		refresh_properties();
