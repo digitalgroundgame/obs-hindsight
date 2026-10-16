@@ -41,11 +41,17 @@ endif()
 
 enable_testing()
 
-foreach(
-  _test
-  IN
-  ITEMS audio-freshness-test audio-ring-test secret-seal-test secrets-test wav-test
+set(
+  HINDSIGHT_TESTS
+  audio-freshness-test
+  audio-ring-test
+  secret-seal-test
+  secrets-test
+  version-check-test
+  wav-test
 )
+
+foreach(_test IN LISTS HINDSIGHT_TESTS)
   add_executable(${_test} ${_test}.cpp)
   target_link_libraries(${_test} PRIVATE hindsight-core)
   add_test(NAME ${_test} COMMAND ${_test})

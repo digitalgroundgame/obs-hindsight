@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "audio-freshness.hpp"
 #include "audio-ring.hpp"
 #include "secret-store.hpp"
+#include "update-check.hpp"
 #include "wav.hpp"
 
 #include <obs-module.h>
@@ -316,9 +317,41 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "window_seconds", kDefaultWindowSeconds);
 }
 
+bool on_download_update_clicked(obs_properties_t *, obs_property_t *, void *)
+{
+	return false; // OBS opens the button's URL itself
+}
+
+// Shown at the top of the filter's settings when update-check.cpp found a
+// newer release. OBS_BUTTON_URL buttons open their URL in the browser:
+// https://github.com/obsproject/obs-studio/blob/31.1.1/libobs/obs-properties.h
+void add_update_notice(obs_properties_t *props)
+{
+	const std::string version = update_check_newer_version();
+	if (version.empty())
+		return;
+
+	std::string text = obs_module_text("Hindsight.UpdateAvailable");
+	const std::string placeholder = "{version}";
+	const size_t at = text.find(placeholder);
+	if (at != std::string::npos)
+		text.replace(at, placeholder.size(), version);
+
+	obs_property_t *notice = obs_properties_add_text(props, "update_notice", text.c_str(), OBS_TEXT_INFO);
+	obs_property_text_set_info_type(notice, OBS_TEXT_INFO_WARNING);
+
+	obs_property_t *button = obs_properties_add_button2(props, "download_update",
+							    obs_module_text("Hindsight.DownloadUpdate"),
+							    on_download_update_clicked, nullptr);
+	obs_property_button_set_type(button, OBS_BUTTON_URL);
+	std::string url = kHindsightReleasesPage; // the setter wants a non-const char * and copies it
+	obs_property_button_set_url(button, url.data());
+}
+
 obs_properties_t *get_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
+	add_update_notice(props);
 
 	obs_property_t *note =
 		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
