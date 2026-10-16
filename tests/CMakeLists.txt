@@ -88,6 +88,7 @@ set(
   audio-freshness-test
   audio-ring-test
   claude-answer-test
+  clip-cleanup-test
   clip-file-test
   file-sha1-test
   private-file-test
