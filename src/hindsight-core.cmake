@@ -9,6 +9,8 @@ set(
   "${CMAKE_CURRENT_LIST_DIR}/audio-freshness.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/private-file.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/private-file.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/secret-seal.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/secret-seal.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/secrets.cpp"

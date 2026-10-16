@@ -85,6 +85,7 @@ set(
   HINDSIGHT_TESTS
   audio-freshness-test
   audio-ring-test
+  private-file-test
   secret-seal-test
   secrets-test
   version-check-test
