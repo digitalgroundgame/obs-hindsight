@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "hindsight-filter.hpp"
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
+#include "speech-model.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -33,7 +34,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QProgressBar>
 #include <QPushButton>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace {
@@ -66,6 +69,80 @@ KeyRow add_key_row(QFormLayout *form, const char *label, const char *forget_labe
 	return row;
 }
 
+// The speech models' check or download, refreshed while the window is open.
+struct ModelRow {
+	QLabel *label = nullptr;
+	QProgressBar *progress = nullptr;
+	QPushButton *retry = nullptr;
+};
+
+QString model_status_text(const SpeechModelStatus &status)
+{
+	const bool speech = status.model == SpeechModelStatus::Model::speech;
+	switch (status.state) {
+	case SpeechModelStatus::State::checking:
+		return QString::fromUtf8(obs_module_text("Hindsight.ModelChecking"));
+	case SpeechModelStatus::State::downloading:
+		if (status.total <= 0)
+			return QString::fromUtf8(obs_module_text(speech ? "Hindsight.ModelDownloadingSpeech"
+									: "Hindsight.ModelDownloadingVad"));
+		return QString::fromUtf8(obs_module_text(speech ? "Hindsight.ModelDownloadingSpeechSize"
+								: "Hindsight.ModelDownloadingVadSize"))
+			.arg(QString::number(static_cast<double>(status.downloaded) / 1e6, 'f', 0),
+			     QString::number(static_cast<double>(status.total) / 1e6, 'f', 0));
+	case SpeechModelStatus::State::ready:
+		return QString::fromUtf8(obs_module_text("Hindsight.ModelReady"));
+	case SpeechModelStatus::State::failed:
+		return QString::fromUtf8(
+			obs_module_text(speech ? "Hindsight.ModelFailedSpeech" : "Hindsight.ModelFailedVad"));
+	}
+	return {};
+}
+
+void show_model_status(const ModelRow &row)
+{
+	const SpeechModelStatus status = speech_model_status();
+	row.label->setText(model_status_text(status));
+	row.retry->setVisible(status.state == SpeechModelStatus::State::failed);
+
+	const bool busy = status.state == SpeechModelStatus::State::checking ||
+			  status.state == SpeechModelStatus::State::downloading;
+	row.progress->setVisible(busy);
+	if (status.state == SpeechModelStatus::State::downloading && status.total > 0) {
+		// In kilobytes, since QProgressBar counts in int.
+		row.progress->setRange(0, static_cast<int>(status.total / 1024));
+		row.progress->setValue(static_cast<int>(status.downloaded / 1024));
+	} else {
+		row.progress->setRange(0, 0); // a busy bar, for a check or an unknown size
+	}
+}
+
+ModelRow add_model_row(QVBoxLayout *layout, QDialog *dialog)
+{
+	ModelRow row;
+	row.label = new QLabel(dialog);
+	row.label->setWordWrap(true);
+	row.progress = new QProgressBar(dialog);
+	row.progress->setTextVisible(false);
+	row.retry = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.ModelRetry")), dialog);
+
+	auto *line = new QHBoxLayout();
+	line->addWidget(row.label, 1);
+	line->addWidget(row.retry);
+	layout->addLayout(line);
+	layout->addWidget(row.progress);
+
+	QObject::connect(row.retry, &QPushButton::clicked, dialog, [row]() {
+		speech_model_start();
+		show_model_status(row);
+	});
+	auto *timer = new QTimer(dialog);
+	QObject::connect(timer, &QTimer::timeout, dialog, [row]() { show_model_status(row); });
+	timer->start(250);
+	show_model_status(row);
+	return row;
+}
+
 void open_settings_dialog(void *)
 {
 	auto *main_window = static_cast<QWidget *>(obs_frontend_get_main_window());
@@ -82,6 +159,8 @@ void open_settings_dialog(void *)
 	layout->addLayout(form);
 	const KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", "Hindsight.Forget", &dialog);
 	const KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", "Hindsight.Forget", &dialog);
+
+	add_model_row(layout, &dialog);
 
 	const Secrets saved = secret_store_get();
 	show_saved_state(claude, !saved.claude_api_key.empty());

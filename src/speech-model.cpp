@@ -36,6 +36,7 @@ namespace {
 
 // A file the transcriber needs, checked against the hash its publisher lists.
 struct ModelFile {
+	SpeechModelStatus::Model model;
 	const char *file; // under the plugin's config folder
 	const char *url;
 	const char *sha1;   // either this...
@@ -45,20 +46,37 @@ struct ModelFile {
 
 // Whisper base.en, about 142 MB. The SHA-1 is the one whisper.cpp lists
 // (models/README.md at v1.9.5).
-constexpr ModelFile kSpeechModel = {"models/ggml-base.en.bin",
+constexpr ModelFile kSpeechModel = {SpeechModelStatus::Model::speech,
+				    "models/ggml-base.en.bin",
 				    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
-				    "137c40403d78fd54d454da0f9bd998f78703390c", nullptr, "speech model (about 142 MB)"};
+				    "137c40403d78fd54d454da0f9bd998f78703390c",
+				    nullptr,
+				    "speech model (about 142 MB)"};
 
 // Silero voice activity detection, about 0.9 MB, so Whisper skips the silence
 // in a clip. The model whisper.cpp's README uses at v1.9.5; the SHA-256 is
 // the Git LFS object ID Hugging Face lists for the file.
-constexpr ModelFile kVadModel = {"models/ggml-silero-v6.2.0.bin",
+constexpr ModelFile kVadModel = {SpeechModelStatus::Model::voice_detection,
+				 "models/ggml-silero-v6.2.0.bin",
 				 "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin",
-				 nullptr, "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
+				 nullptr,
+				 "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
 				 "voice detection model (about 1 MB)"};
 
 std::thread worker;
 std::atomic<bool> stopping{false};
+std::atomic<bool> running{false};
+
+std::mutex status_lock;
+SpeechModelStatus status; // guarded by status_lock
+
+void set_status(SpeechModelStatus::State state, SpeechModelStatus::Model model)
+{
+	std::lock_guard<std::mutex> guard(status_lock);
+	status = SpeechModelStatus{};
+	status.state = state;
+	status.model = model;
+}
 
 std::mutex ready_lock;
 std::string ready_speech_path; // guarded by ready_lock
@@ -83,8 +101,13 @@ size_t write_file(char *data, size_t size, size_t count, void *user)
 	return std::fwrite(data, size, count, static_cast<FILE *>(user)) * size;
 }
 
-int on_progress(void *, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+int on_progress(void *, curl_off_t total, curl_off_t downloaded, curl_off_t, curl_off_t)
 {
+	{
+		std::lock_guard<std::mutex> guard(status_lock);
+		status.downloaded = static_cast<long long>(downloaded);
+		status.total = static_cast<long long>(total);
+	}
 	return stopping.load() ? 1 : 0;
 }
 
@@ -166,6 +189,7 @@ bool fetch(const ModelFile &model, std::string &ready_path)
 	const std::string path = config_path(model.file);
 	if (path.empty())
 		return false;
+	set_status(SpeechModelStatus::State::checking, model.model);
 
 	// A model from an earlier start is checked again, off the thread that
 	// loads OBS, in case it was damaged since.
@@ -178,6 +202,7 @@ bool fetch(const ModelFile &model, std::string &ready_path)
 		os_unlink(path.c_str());
 	}
 
+	set_status(SpeechModelStatus::State::downloading, model.model);
 	obs_log(LOG_INFO, "downloading the %s to %s", model.what, path.c_str());
 	const uint64_t start = os_gettime_ns();
 	if (!download(model, path))
@@ -190,27 +215,42 @@ bool fetch(const ModelFile &model, std::string &ready_path)
 void run_downloads()
 {
 	// The speech model first: transcription works without voice detection,
-	// only slower.
-	fetch(kSpeechModel, ready_speech_path);
-	if (!stopping.load())
-		fetch(kVadModel, ready_vad_path);
+	// only slower. The status reports the first failure, if any.
+	const bool speech_ready = fetch(kSpeechModel, ready_speech_path);
+	const bool vad_ready = !stopping.load() && fetch(kVadModel, ready_vad_path);
+	if (speech_ready && vad_ready)
+		set_status(SpeechModelStatus::State::ready, SpeechModelStatus::Model::speech);
+	else
+		set_status(SpeechModelStatus::State::failed, speech_ready ? kVadModel.model : kSpeechModel.model);
+	running = false;
 }
 
 } // namespace
 
 void speech_model_start()
 {
-	if (worker.joinable())
+	if (running.load())
 		return;
+	if (worker.joinable())
+		worker.join(); // a finished run, before a retry
 
 	char *dir = obs_module_config_path("models");
-	if (!dir)
+	if (!dir) {
+		set_status(SpeechModelStatus::State::failed, SpeechModelStatus::Model::speech);
 		return;
+	}
 	os_mkdirs(dir);
 	bfree(dir);
 
 	stopping = false;
+	running = true;
 	worker = std::thread(run_downloads);
+}
+
+SpeechModelStatus speech_model_status()
+{
+	std::lock_guard<std::mutex> guard(status_lock);
+	return status;
 }
 
 void speech_model_stop()
