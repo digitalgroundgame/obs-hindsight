@@ -35,7 +35,9 @@ bool create_private_file(const std::string &)
 
 bool create_private_file(const std::string &path)
 {
-	const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+	// O_NOFOLLOW: a symlink planted at path fails here instead of sending
+	// the keys (and the chmod) to whatever it points at.
+	const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, S_IRUSR | S_IWUSR);
 	if (fd < 0)
 		return false;
 	// open() leaves the mode of a file that already existed alone.

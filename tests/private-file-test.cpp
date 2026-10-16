@@ -29,7 +29,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace {
 
-// A fresh, empty folder for one test run, removed by remove_dir.
+// A fresh, empty folder for one test run; main removes it with rmdir.
 std::string make_temp_dir()
 {
 	const char *base = std::getenv("TMPDIR");
@@ -76,6 +76,27 @@ void makes_an_existing_file_owner_only_and_empty(const std::string &dir)
 	unlink(path.c_str());
 }
 
+void refuses_a_symlink(const std::string &dir)
+{
+	// A symlink at the temporary path must not redirect the keys elsewhere.
+	const std::string target = dir + "/target";
+	const std::string link = dir + "/link.tmp";
+	FILE *file = std::fopen(target.c_str(), "wb");
+	CHECK(file != nullptr);
+	if (file) {
+		std::fputs("not keys", file);
+		std::fclose(file);
+	}
+	CHECK(chmod(target.c_str(), 0644) == 0);
+	CHECK(symlink(target.c_str(), link.c_str()) == 0);
+
+	CHECK(!create_private_file(link));
+	CHECK(mode_of(target) == 0644);
+	CHECK(size_of(target) == 8);
+	unlink(link.c_str());
+	unlink(target.c_str());
+}
+
 void fails_when_the_folder_is_missing(const std::string &dir)
 {
 	CHECK(!create_private_file(dir + "/missing/keys.tmp"));
@@ -93,6 +114,7 @@ int main()
 		creates_an_owner_only_file(dir);
 		makes_an_existing_file_owner_only_and_empty(dir);
 		fails_when_the_folder_is_missing(dir);
+		refuses_a_symlink(dir);
 		rmdir(dir.c_str());
 	}
 	return check::finish();
