@@ -83,4 +83,25 @@ if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32 bcrypt)
 endif()
 
+# Where the update notice's Download the update button goes. CI fills this in
+# from the HINDSIGHT_UPDATE_URL repository variable; when it is empty, the
+# button opens the latest GitHub release (see update-check.cpp). The
+# environment always wins over a value cached by an earlier configure.
+if(DEFINED ENV{HINDSIGHT_UPDATE_URL})
+  set(HINDSIGHT_UPDATE_URL "$ENV{HINDSIGHT_UPDATE_URL}" CACHE STRING "Link for the Download the update button" FORCE)
+else()
+  set(HINDSIGHT_UPDATE_URL "" CACHE STRING "Link for the Download the update button")
+endif()
+if(HINDSIGHT_UPDATE_URL)
+  # Only characters that pass through a compile definition unchanged on every
+  # compiler, so no query strings or fragments.
+  if(NOT HINDSIGHT_UPDATE_URL MATCHES "^https://[A-Za-z0-9./_~:-]+$")
+    message(
+      FATAL_ERROR
+      "HINDSIGHT_UPDATE_URL must be an https:// link made of letters, digits and . / _ ~ : -, got: ${HINDSIGHT_UPDATE_URL}"
+    )
+  endif()
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HINDSIGHT_UPDATE_URL="${HINDSIGHT_UPDATE_URL}")
+endif()
+
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

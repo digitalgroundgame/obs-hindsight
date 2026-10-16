@@ -33,7 +33,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <thread>
 #include <utility>
 
+// Builds set HINDSIGHT_UPDATE_URL from the repository variable of the same
+// name (see CMakeLists.txt) to send this link through our own site. Without
+// it, the link opens the newest release on GitHub. Update now reads GitHub's
+// API either way, since that is where the installer's SHA-256 comes from.
+#ifdef HINDSIGHT_UPDATE_URL
+const char *const kHindsightReleasesPage = HINDSIGHT_UPDATE_URL;
+#else
 const char *const kHindsightReleasesPage = "https://github.com/digitalgroundgame/obs-hindsight/releases/latest";
+#endif
 
 namespace {
 
