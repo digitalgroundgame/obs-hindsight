@@ -97,9 +97,13 @@ void on_whisper_log(ggml_log_level level, const char *text, void *)
 		obs_log(LOG_WARNING, "whisper: %s", text);
 }
 
+// Set while the plugin unloads, so a transcription in progress stops instead
+// of holding up closing OBS.
+std::atomic<bool> unloading{false};
+
 bool on_abort(void *data)
 {
-	return static_cast<const std::atomic<bool> *>(data)->load();
+	return unloading.load() || static_cast<const std::atomic<bool> *>(data)->load();
 }
 
 // Lowers the calling thread's priority while it lives, so transcription
@@ -169,6 +173,10 @@ Transcript transcribe(const std::vector<float> &samples, uint32_t sample_rate, c
 		result.outcome = Transcript::Outcome::busy;
 		return result;
 	}
+	if (unloading.load()) {
+		result.outcome = Transcript::Outcome::cancelled;
+		return result;
+	}
 
 	if (!model) {
 		const std::string path = speech_model_path();
@@ -176,9 +184,11 @@ Transcript transcribe(const std::vector<float> &samples, uint32_t sample_rate, c
 			result.outcome = Transcript::Outcome::not_ready;
 			return result;
 		}
+		// The file was checked when it downloaded, so a failure here is
+		// likely passing (low memory); the next press tries again.
 		model = load_model(path);
 		if (!model) {
-			speech_model_discard();
+			obs_log(LOG_WARNING, "could not load the speech model from %s", path.c_str());
 			return result;
 		}
 	}
@@ -205,7 +215,7 @@ Transcript transcribe(const std::vector<float> &samples, uint32_t sample_rate, c
 
 	const uint64_t start = os_gettime_ns();
 	const int status = whisper_full(model, params, audio.data(), static_cast<int>(audio.size()));
-	if (cancel.load()) {
+	if (cancel.load() || unloading.load()) {
 		result.outcome = Transcript::Outcome::cancelled;
 		return result;
 	}
@@ -235,6 +245,8 @@ Transcript transcribe(const std::vector<float> &samples, uint32_t sample_rate, c
 void transcriber_unload()
 {
 #ifdef HINDSIGHT_HAS_WHISPER
+	// Stops a transcription in progress, then waits for it to return.
+	unloading = true;
 	std::lock_guard<std::mutex> guard(model_lock);
 	if (model)
 		whisper_free(model);

@@ -67,9 +67,10 @@ if(NOT APPLE)
   hindsight_add_whisper(${CMAKE_PROJECT_NAME})
 endif()
 
-# DPAPI, which secret-seal.cpp uses to encrypt the saved keys.
+# DPAPI, which secret-seal.cpp uses to encrypt the saved keys, and BCrypt,
+# which file-sha1.cpp uses to check the speech model download.
 if(WIN32)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32 bcrypt)
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

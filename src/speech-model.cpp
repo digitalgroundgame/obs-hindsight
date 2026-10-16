@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "speech-model.hpp"
+#include "file-sha1.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -27,6 +28,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <atomic>
 #include <cstdio>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -34,6 +36,8 @@ namespace {
 
 constexpr const char *kModelFile = "models/ggml-base.en.bin";
 constexpr const char *kModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
+// The SHA-1 whisper.cpp lists for base.en (models/README.md at v1.9.5).
+constexpr const char *kModelSha1 = "137c40403d78fd54d454da0f9bd998f78703390c";
 
 std::thread worker;
 std::atomic<bool> stopping{false};
@@ -63,6 +67,19 @@ size_t write_file(char *data, size_t size, size_t count, void *user)
 int on_progress(void *, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
 {
 	return stopping.load() ? 1 : 0;
+}
+
+// Whether the file at path is the model we expect. A captive portal's page,
+// a truncated file or a changed upstream file all fail this. Only Windows can
+// check the hash for now (see file-sha1.hpp); elsewhere the file is trusted.
+bool is_expected_model(const std::string &path)
+{
+	const std::optional<std::string> sha1 = file_sha1(path);
+#ifdef _WIN32
+	return sha1 && *sha1 == kModelSha1;
+#else
+	return !sha1 || *sha1 == kModelSha1;
+#endif
 }
 
 // Downloads to a .part file and renames it only once complete, so a closed
@@ -109,6 +126,11 @@ bool download(const std::string &path)
 		os_unlink(part.c_str());
 		return false;
 	}
+	if (!is_expected_model(part)) {
+		obs_log(LOG_WARNING, "the downloaded speech model is not the expected file; deleted it");
+		os_unlink(part.c_str());
+		return false;
+	}
 	if (os_rename(part.c_str(), path.c_str()) != 0) {
 		obs_log(LOG_WARNING, "could not save the speech model to %s", path.c_str());
 		os_unlink(part.c_str());
@@ -119,6 +141,17 @@ bool download(const std::string &path)
 
 void run_download(const std::string &path)
 {
+	// A model from an earlier start is checked again, off the thread that
+	// loads OBS, in case it was damaged since.
+	if (os_file_exists(path.c_str())) {
+		if (is_expected_model(path)) {
+			set_ready(path);
+			return;
+		}
+		obs_log(LOG_WARNING, "the saved speech model is damaged; downloading it again");
+		os_unlink(path.c_str());
+	}
+
 	obs_log(LOG_INFO, "downloading the speech model (about 142 MB) to %s", path.c_str());
 	const uint64_t start = os_gettime_ns();
 	if (!download(path))
@@ -136,10 +169,6 @@ void speech_model_start()
 	const std::string path = model_path();
 	if (path.empty())
 		return;
-	if (os_file_exists(path.c_str())) {
-		set_ready(path);
-		return;
-	}
 
 	char *dir = obs_module_config_path("models");
 	if (dir)
@@ -161,15 +190,4 @@ std::string speech_model_path()
 {
 	std::lock_guard<std::mutex> guard(ready_lock);
 	return ready_path;
-}
-
-void speech_model_discard()
-{
-	std::lock_guard<std::mutex> guard(ready_lock);
-	if (ready_path.empty())
-		return;
-	os_unlink(ready_path.c_str());
-	obs_log(LOG_WARNING,
-		"deleted the speech model because it could not be loaded; restart OBS to download it again");
-	ready_path.clear();
 }

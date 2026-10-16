@@ -44,5 +44,7 @@ struct Transcript {
 // stream doesn't drop frames. Setting cancel stops it early.
 Transcript transcribe(const std::vector<float> &samples, uint32_t sample_rate, const std::atomic<bool> &cancel);
 
-// Frees the loaded model. Called from obs_module_unload.
+// Stops a transcription in progress, waits for it to return and frees the
+// model; transcribe() only returns cancelled after this. Called from
+// obs_module_unload.
 void transcriber_unload();

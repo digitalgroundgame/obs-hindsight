@@ -24,8 +24,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // It is not shipped with the plugin; the first time OBS starts with Hindsight,
 // it downloads in the background into the plugin's config folder.
 
-// Starts the download if the model isn't there yet. Called from
-// obs_module_load, after curl_global_init.
+// Checks the saved model, or downloads it if it is missing or damaged, on a
+// background thread. Called from obs_module_load, after curl_global_init.
 void speech_model_start();
 
 // Stops a download in progress. Called from obs_module_unload.
@@ -33,7 +33,3 @@ void speech_model_stop();
 
 // The model file's path, or empty while it is missing or still downloading.
 std::string speech_model_path();
-
-// Deletes a model file whisper.cpp could not load, so the next start downloads
-// it again.
-void speech_model_discard();

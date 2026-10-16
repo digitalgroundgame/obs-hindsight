@@ -11,6 +11,8 @@ set(
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-file.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-file.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/file-sha1.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/file-sha1.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/private-file.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/private-file.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/secret-seal.cpp"
