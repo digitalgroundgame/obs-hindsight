@@ -48,9 +48,16 @@ std::vector<float> AudioRing::snapshot() const
 {
 	std::vector<float> out;
 	out.reserve(filled);
+	copy_to(out);
+	return out;
+}
+
+void AudioRing::copy_to(std::vector<float> &out) const
+{
+	out.clear();
 	const std::size_t size = samples.size();
 	if (size == 0)
-		return out;
+		return;
 
 	// The buffered audio is at most two runs: from start to the end of the
 	// vector, then wrapping around to the beginning.
@@ -60,5 +67,4 @@ std::vector<float> AudioRing::snapshot() const
 	out.insert(out.end(), begin + static_cast<std::ptrdiff_t>(start),
 		   begin + static_cast<std::ptrdiff_t>(start + first));
 	out.insert(out.end(), begin, begin + static_cast<std::ptrdiff_t>(filled - first));
-	return out;
 }

@@ -32,6 +32,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -58,11 +59,26 @@ struct HindsightFilter {
 	std::string discord_user_id;
 };
 
-// Returns the buffered audio, oldest sample first.
+// Returns the buffered audio, oldest sample first. filter_audio needs the
+// same lock on OBS's audio thread, so the few megabytes are allocated before
+// taking it and the lock is held only for the copy.
 std::vector<float> snapshot(HindsightFilter *filter)
 {
-	std::lock_guard<std::mutex> guard(filter->lock);
-	return filter->ring.snapshot();
+	std::vector<float> out;
+	for (;;) {
+		size_t capacity = 0;
+		{
+			std::lock_guard<std::mutex> guard(filter->lock);
+			// Retry if the ring grew since we reserved (the slider moved
+			// between the two locks), so the copy never allocates here.
+			if (out.capacity() >= filter->ring.capacity()) {
+				filter->ring.copy_to(out);
+				return out;
+			}
+			capacity = filter->ring.capacity();
+		}
+		out.reserve(capacity);
+	}
 }
 
 bool write_wav(const std::string &path, const std::vector<float> &samples, uint32_t sample_rate)
@@ -164,11 +180,25 @@ void update(void *data, obs_data_t *settings)
 
 	take_keys_from_settings(settings);
 
-	std::lock_guard<std::mutex> guard(filter->lock);
-	filter->discord_user_id = obs_data_get_string(settings, "discord_user_id");
+	// A resized ring is a few megabytes. Build it before taking the lock the
+	// audio thread waits on; the old one is freed with `resized` after the
+	// lock is released.
+	bool resize = false;
+	{
+		std::lock_guard<std::mutex> guard(filter->lock);
+		resize = filter->ring.capacity() != size;
+	}
+	AudioRing resized;
+	if (resize)
+		resized.reset(size);
 
-	if (filter->ring.capacity() != size)
-		filter->ring.reset(size);
+	std::string discord_user_id = obs_data_get_string(settings, "discord_user_id");
+
+	std::lock_guard<std::mutex> guard(filter->lock);
+	filter->discord_user_id = std::move(discord_user_id);
+
+	if (resize && filter->ring.capacity() != size)
+		std::swap(filter->ring, resized);
 }
 
 void *create(obs_data_t *settings, obs_source_t *source)
