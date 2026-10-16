@@ -42,7 +42,11 @@ bool create_private_file(const std::string &path)
 		return false;
 	// open() leaves the mode of a file that already existed alone.
 	const bool private_mode = fchmod(fd, S_IRUSR | S_IWUSR) == 0;
-	return close(fd) == 0 && private_mode;
+	if (close(fd) == 0 && private_mode)
+		return true;
+	// Don't leave behind a file that may be readable by others.
+	unlink(path.c_str());
+	return false;
 }
 
 #endif

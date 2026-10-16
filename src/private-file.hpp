@@ -23,7 +23,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // Creates the file at path, or empties it if it exists, so that only its
 // owner can read or write it, before anything secret goes in. The keys file
 // needs this on macOS and Linux, where it is stored unencrypted until #15.
-// Returns false if the file could not be created or its mode set. On Windows
-// the keys are encrypted instead, so this does nothing and returns true.
+// Returns false if the file could not be created, or if its mode could not be
+// set (then the file is removed). On Windows the keys are encrypted instead,
+// so this does nothing and returns true.
 // Free of OBS so the tests can run it on its own.
 bool create_private_file(const std::string &path);
