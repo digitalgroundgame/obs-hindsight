@@ -27,6 +27,12 @@ void AudioRing::reset(std::size_t capacity)
 	filled = 0;
 }
 
+void AudioRing::clear()
+{
+	write_pos = 0;
+	filled = 0;
+}
+
 void AudioRing::push_planar(const float *const *planes, std::size_t channels, std::size_t frames)
 {
 	const std::size_t size = samples.size();

@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "hindsight-filter.hpp"
+#include "audio-freshness.hpp"
 #include "audio-ring.hpp"
 #include "secret-store.hpp"
 #include "wav.hpp"
@@ -56,6 +57,7 @@ struct HindsightFilter {
 	// audio thread, while the hotkey and settings run on other threads.
 	std::mutex lock;
 	AudioRing ring;
+	uint64_t last_push_ns = 0; // when the newest buffered audio arrived
 
 	// The API keys are not here: every filter shares the ones in
 	// secret-store.cpp.
@@ -75,12 +77,15 @@ struct ClipJob {
 	std::string name; // without the extension
 };
 
-// Returns the buffered audio, oldest sample first. filter_audio needs the
-// same lock on OBS's audio thread, so the few megabytes are allocated before
-// taking it and the lock is held only for the copy.
+// Returns the audio heard within the window before now, oldest sample first.
+// filter_audio needs the same lock on OBS's audio thread, so the few
+// megabytes are allocated before taking it and the lock is held only for the
+// copy.
 std::vector<float> snapshot(HindsightFilter *filter)
 {
 	std::vector<float> out;
+	uint64_t last_push_ns = 0;
+	size_t window = 0;
 	for (;;) {
 		size_t capacity = 0;
 		{
@@ -89,12 +94,20 @@ std::vector<float> snapshot(HindsightFilter *filter)
 			// between the two locks), so the copy never allocates here.
 			if (out.capacity() >= filter->ring.capacity()) {
 				filter->ring.copy_to(out);
-				return out;
+				last_push_ns = filter->last_push_ns;
+				window = filter->ring.capacity();
+				break;
 			}
 			capacity = filter->ring.capacity();
 		}
 		out.reserve(capacity);
 	}
+
+	// If the mic has been quiet in OBS (its scene not showing), drop what is
+	// now older than the window.
+	const size_t fresh = fresh_sample_count(out.size(), window, filter->sample_rate, last_push_ns, os_gettime_ns());
+	out.erase(out.begin(), out.begin() + static_cast<std::ptrdiff_t>(out.size() - fresh));
+	return out;
 }
 
 bool write_wav(const std::string &path, const std::vector<float> &samples, uint32_t sample_rate)
@@ -284,8 +297,15 @@ obs_audio_data *filter_audio(void *data, obs_audio_data *audio)
 	auto *filter = static_cast<HindsightFilter *>(data);
 	float **planes = reinterpret_cast<float **>(audio->data);
 
+	const uint64_t now = os_gettime_ns();
+
 	std::lock_guard<std::mutex> guard(filter->lock);
+	// After a pause (the source was inactive), start over rather than join
+	// old audio to new with no gap between them.
+	if (audio_resumed_after_gap(filter->last_push_ns, now))
+		filter->ring.clear();
 	filter->ring.push_planar(planes, filter->channels, audio->frames);
+	filter->last_push_ns = now;
 
 	// The audio passes through untouched; Hindsight only listens.
 	return audio;

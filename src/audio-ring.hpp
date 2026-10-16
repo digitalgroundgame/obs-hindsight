@@ -29,6 +29,9 @@ public:
 	// Sets how many samples to keep and drops whatever was buffered.
 	void reset(std::size_t capacity);
 
+	// Drops whatever was buffered, keeping the capacity. Never allocates.
+	void clear();
+
 	std::size_t capacity() const { return samples.size(); }
 	std::size_t size() const { return filled; }
 
