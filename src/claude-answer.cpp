@@ -130,8 +130,14 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 			const auto error = reply.find("error");
 			if (error != reply.end() && error->is_object()) {
 				const std::string type = string_at(*error, "type");
+				std::string message = string_at(*error, "message");
+				// A key made for the whole organization, not one workspace, needs
+				// an anthropic-workspace-id header. The API has no error type of
+				// its own for this, so the message is the only way to tell.
+				if (status == 400 && message.find("anthropic-workspace-id") != std::string::npos)
+					return failure(kWorkspaceKeyError, std::move(message));
 				if (!type.empty())
-					return failure(type, string_at(*error, "message"));
+					return failure(type, std::move(message));
 			}
 		}
 		return failure("http_" + std::to_string(status));

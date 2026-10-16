@@ -39,6 +39,11 @@ constexpr size_t kMaxAnswerCharacters = 1700;
 // found and its answer.
 std::string build_claude_request(const std::string &transcript);
 
+// The key is not scoped to a workspace, so the API wants an
+// anthropic-workspace-id header. The streamer needs a workspace key instead.
+// https://platform.claude.com/docs/en/manage-claude/authentication
+inline constexpr const char *kWorkspaceKeyError = "workspace_key";
+
 struct ClaudeAnswer {
 	enum class Outcome {
 		answered,    // question and answer are set
@@ -50,8 +55,9 @@ struct ClaudeAnswer {
 	std::string answer;
 
 	// For a failed request: the API's error type (authentication_error,
-	// rate_limit_error, overloaded_error, ...) or "bad_response" when the
-	// reply could not be read, and the API's message if it sent one.
+	// rate_limit_error, overloaded_error, ...), kWorkspaceKeyError, or
+	// "bad_response" when the reply could not be read, and the API's message
+	// if it sent one.
 	std::string error_type;
 	std::string error_message;
 };

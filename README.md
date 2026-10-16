@@ -82,7 +82,9 @@ OBS log. It does not message Discord yet.
    the speech model to download; the log says `speech model downloaded` when
    it's done.
 2. Under **Tools > Hindsight settings**, enter your Claude API key and click
-   **Save**.
+   **Save**. Create the key on the
+   [API keys](https://platform.claude.com/settings/keys) page of the Claude
+   Console with a workspace selected; a key without a workspace is rejected.
 3. Open your mic's **Filters**, add **Hindsight**, and close the window.
 4. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
    last question" under it.

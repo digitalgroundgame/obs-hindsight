@@ -108,6 +108,9 @@ void answer(const Clip &clip)
 		if (reply.error_type == "authentication_error")
 			obs_log(LOG_WARNING,
 				"answering stopped: Claude rejected the API key; check it in Tools > Hindsight settings");
+		else if (reply.error_type == kWorkspaceKeyError)
+			obs_log(LOG_WARNING,
+				"answering stopped: this Claude API key isn't tied to a workspace. In the Claude Console, create a key with a workspace selected and enter it in Tools > Hindsight settings");
 		else if (reply.error_type != "cancelled")
 			obs_log(LOG_WARNING, "answering stopped: the Claude request failed (%s) %s",
 				reply.error_type.c_str(), reply.error_message.c_str());
