@@ -24,6 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "secret-store.hpp"
 #include "settings-dialog.hpp"
 #include "update-check.hpp"
+#include "update-install.hpp"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -43,6 +44,7 @@ bool obs_module_load(void)
 
 void obs_module_unload(void)
 {
+	update_install_stop();
 	update_check_stop();
 	obs_log(LOG_INFO, "plugin unloaded");
 }

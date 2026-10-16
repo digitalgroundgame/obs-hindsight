@@ -78,7 +78,7 @@ add_library(hindsight-core STATIC ${HINDSIGHT_CORE_SOURCES} bmem-shim.cpp)
 target_include_directories(hindsight-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 target_include_directories(hindsight-core SYSTEM PUBLIC "${_libobs_headers}")
 if(WIN32)
-  target_link_libraries(hindsight-core PUBLIC crypt32)
+  target_link_libraries(hindsight-core PUBLIC crypt32 bcrypt)
 endif()
 
 enable_testing()
@@ -91,6 +91,8 @@ set(
   private-file-test
   secret-seal-test
   secrets-test
+  sha256-test
+  update-asset-test
   version-check-test
   wav-test
 )

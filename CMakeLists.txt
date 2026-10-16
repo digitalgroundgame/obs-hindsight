@@ -54,12 +54,15 @@ target_sources(
     src/settings-dialog.hpp
     src/update-check.cpp
     src/update-check.hpp
+    src/update-install.cpp
+    src/update-install.hpp
     ${HINDSIGHT_CORE_SOURCES}
 )
 
-# DPAPI, which secret-seal.cpp uses to encrypt the saved keys.
+# DPAPI, which secret-seal.cpp uses to encrypt the saved keys, and CNG, which
+# sha256.cpp uses to check a downloaded update.
 if(WIN32)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32 bcrypt)
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
