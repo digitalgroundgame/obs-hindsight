@@ -43,7 +43,7 @@ constexpr const char *kDiscordBotTokenName = "discord_bot_token";
 // often carry a stray space or newline.
 std::string clean_key(const std::string &key);
 
-// Whether a cleaned code has the DGG server's format: "hs_" followed by 43
+// Whether a cleaned code has DGG Connect's format: "dgc_" followed by 43
 // base64url characters. Catches a code pasted short or the wrong thing pasted.
 bool is_hindsight_code(const std::string &code);
 

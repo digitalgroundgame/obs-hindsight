@@ -33,9 +33,9 @@ std::string clean_key(const std::string &key)
 
 bool is_hindsight_code(const std::string &code)
 {
-	constexpr size_t kPrefixLength = 3;
+	constexpr size_t kPrefixLength = 4;
 	constexpr size_t kRandomLength = 43; // 32 random bytes in base64url, unpadded
-	if (code.size() != kPrefixLength + kRandomLength || code.compare(0, kPrefixLength, "hs_") != 0)
+	if (code.size() != kPrefixLength + kRandomLength || code.compare(0, kPrefixLength, "dgc_") != 0)
 		return false;
 	for (size_t i = kPrefixLength; i < code.size(); i++) {
 		const char c = code[i];

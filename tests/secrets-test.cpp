@@ -100,17 +100,18 @@ void forgets_one_key()
 void recognises_hindsight_codes()
 {
 	const std::string random(43, 'A');
-	CHECK(is_hindsight_code("hs_" + random));
-	CHECK(is_hindsight_code("hs_abcdefghijklmnopqrstuvwxyzABCDEFGHIJK-_0123"));
+	CHECK(is_hindsight_code("dgc_" + random));
+	CHECK(is_hindsight_code("dgc_abcdefghijklmnopqrstuvwxyzABCDEFGHIJK-_0123"));
 
 	CHECK(!is_hindsight_code(""));
-	CHECK(!is_hindsight_code("hs_"));
-	CHECK(!is_hindsight_code("hs_" + random.substr(1))); // pasted one short
-	CHECK(!is_hindsight_code("hs_" + random + "A"));
-	CHECK(!is_hindsight_code("HS_" + random));
-	CHECK(!is_hindsight_code("sk_" + random)); // the wrong key in the box
-	CHECK(!is_hindsight_code("hs_" + random.substr(1) + "="));
-	CHECK(!is_hindsight_code("hs_" + random.substr(1) + "+"));
+	CHECK(!is_hindsight_code("dgc_"));
+	CHECK(!is_hindsight_code("dgc_" + random.substr(1))); // pasted one short
+	CHECK(!is_hindsight_code("dgc_" + random + "A"));
+	CHECK(!is_hindsight_code("DGC_" + random));
+	CHECK(!is_hindsight_code("hs_" + random + "A")); // the old stream-widgets format
+	CHECK(!is_hindsight_code("sk_" + random));       // the wrong key in the box
+	CHECK(!is_hindsight_code("dgc_" + random.substr(1) + "="));
+	CHECK(!is_hindsight_code("dgc_" + random.substr(1) + "+"));
 }
 
 } // namespace

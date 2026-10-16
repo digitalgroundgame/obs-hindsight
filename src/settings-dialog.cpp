@@ -49,7 +49,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 namespace {
 
 // Where a streamer signs in with Discord to get their Hindsight code.
-constexpr const char *kGetCodeUrl = "https://stream-widgets.digitalgroundgame.org/hindsight";
+constexpr const char *kGetCodeUrl = "https://connect.digitalgroundgame.org";
 
 QString text(const char *key)
 {
