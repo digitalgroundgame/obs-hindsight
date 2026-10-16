@@ -17,6 +17,8 @@ set(
   "${CMAKE_CURRENT_LIST_DIR}/clip-file.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/file-hash.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/file-hash.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/local-time.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/local-time.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/private-file.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/private-file.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/secret-seal.cpp"

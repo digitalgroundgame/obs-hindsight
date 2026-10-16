@@ -98,7 +98,7 @@ std::string shorten_text(const std::string &text, size_t max_characters)
 	return text;
 }
 
-std::string build_claude_request(const std::string &transcript)
+std::string build_claude_request(const std::string &transcript, const std::string &local_time)
 {
 	const json input_schema = {
 		{"type", "object"},
@@ -128,7 +128,8 @@ std::string build_claude_request(const std::string &transcript)
 		{"tool_choice", {{"type", "tool"}, {"name", kToolName}}},
 		{"messages", json::array({{
 				     {"role", "user"},
-				     {"content", "<transcript>\n" + transcript + "\n</transcript>"},
+				     {"content", "<local_time>" + local_time + "</local_time>\n<transcript>\n" +
+							 transcript + "\n</transcript>"},
 			     }})},
 	};
 	// Replace bad UTF-8 from the transcript rather than throw.

@@ -46,7 +46,8 @@ std::string tool_reply(const std::string &question, const std::string &answer)
 
 void request_forces_the_tool_and_carries_the_transcript()
 {
-	const json request = json::parse(build_claude_request("what year did \"the wall\" fall\n"));
+	const json request = json::parse(build_claude_request("what year did \"the wall\" fall\n",
+							      "Friday, October 16, 2026, 2:48 AM (UTC-04:00)"));
 
 	CHECK(request["model"] == kClaudeModel);
 	CHECK(request["tool_choice"]["type"] == "tool");
@@ -56,13 +57,15 @@ void request_forces_the_tool_and_carries_the_transcript()
 	CHECK(request["messages"][0]["role"] == "user");
 	const std::string content = request["messages"][0]["content"];
 	CHECK(content.find("what year did \"the wall\" fall") != std::string::npos);
+	CHECK(content.find("<local_time>Friday, October 16, 2026, 2:48 AM (UTC-04:00)</local_time>") !=
+	      std::string::npos);
 	CHECK(request["system"].get<std::string>().find("1,700") != std::string::npos);
 }
 
 void request_survives_bad_utf8()
 {
 	// Transcription can split a character; the request must still be valid JSON.
-	const std::string body = build_claude_request(std::string("caf\xc3", 4));
+	const std::string body = build_claude_request(std::string("caf\xc3", 4), "");
 	CHECK(!json::parse(body, nullptr, false).is_discarded());
 }
 

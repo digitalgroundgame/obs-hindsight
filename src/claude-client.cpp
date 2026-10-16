@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "claude-client.hpp"
+#include "local-time.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -63,7 +64,7 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 	if (!curl)
 		return failed("network", "curl failed to start");
 
-	const std::string request = build_claude_request(transcript);
+	const std::string request = build_claude_request(transcript, local_time_text());
 	std::string body;
 
 	curl_slist *headers = nullptr;

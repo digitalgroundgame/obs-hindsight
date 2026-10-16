@@ -36,8 +36,9 @@ constexpr size_t kMaxAnswerCharacters = 1700;
 
 // The JSON body for POST /v1/messages: the transcript of the last few seconds
 // of the streamer's mic, and a tool Claude must call with the question it
-// found and its answer.
-std::string build_claude_request(const std::string &transcript);
+// found and its answer. local_time (from local_time_text) tells Claude when
+// "now" is for questions about today or tonight.
+std::string build_claude_request(const std::string &transcript, const std::string &local_time);
 
 // The key is not scoped to a workspace, so the API wants an
 // anthropic-workspace-id header. The streamer needs a workspace key instead.
