@@ -15,6 +15,8 @@ function(hindsight_add_whisper target)
   # Lets these plain variables set the projects' option()s.
   set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
   set(BUILD_SHARED_LIBS OFF)
+  # The static libraries go into the plugin, a shared library.
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   set(WHISPER_BUILD_TESTS OFF)
   set(WHISPER_BUILD_EXAMPLES OFF)
   set(WHISPER_BUILD_SERVER OFF)
