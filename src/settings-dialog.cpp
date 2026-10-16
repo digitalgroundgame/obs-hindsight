@@ -154,6 +154,9 @@ void add_update_notice(QVBoxLayout *layout, QDialog *dialog)
 	auto *text = new QLabel(dialog);
 	text->setWordWrap(true);
 	layout->addWidget(text);
+	auto *progress = new QProgressBar(dialog);
+	progress->setRange(0, 100);
+	layout->addWidget(progress);
 	auto *update_now = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.UpdateNow")), dialog);
 	auto *release_page = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.DownloadUpdate")), dialog);
 	auto *check_now = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.CheckNow")), dialog);
@@ -164,11 +167,13 @@ void add_update_notice(QVBoxLayout *layout, QDialog *dialog)
 	line->addStretch(1);
 	layout->addLayout(line);
 
-	auto refresh = [text, update_now, release_page, check_now]() {
+	auto refresh = [text, progress, update_now, release_page, check_now]() {
 		const UpdateNotice notice = update_notice_current();
 		const std::string status = notice.show ? notice.text : update_check_status_text();
 		text->setText(QString::fromStdString(status));
 		text->setVisible(!status.empty());
+		progress->setVisible(notice.percent >= 0);
+		progress->setValue(notice.percent >= 0 ? notice.percent : 0);
 		update_now->setVisible(notice.offer_update_now);
 		update_now->setEnabled(notice.update_now_enabled);
 		release_page->setVisible(notice.offer_release_page);
