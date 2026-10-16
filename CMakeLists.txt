@@ -6,6 +6,9 @@ project(${_name} VERSION ${_version})
 
 option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
 option(ENABLE_QT "Use Qt functionality" ON)
+# Shows the Hindsight code (from DGG Connect) in Tools > Hindsight settings.
+# Off until DGG Connect is live and Hindsight sends answers through it.
+option(HINDSIGHT_ACCESS_CODES "Ask for a DGG Connect code in Hindsight settings" OFF)
 
 include(compilerconfig)
 include(defaults)
@@ -69,6 +72,10 @@ target_sources(
     src/claude-client.hpp
 )
 target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PRIVATE "${HINDSIGHT_JSON_INCLUDE_DIR}")
+
+if(HINDSIGHT_ACCESS_CODES)
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HINDSIGHT_ACCESS_CODES)
+endif()
 
 # whisper.cpp for transcription; see src/whisper.cmake.
 if(NOT APPLE)

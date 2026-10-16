@@ -48,8 +48,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace {
 
+#ifdef HINDSIGHT_ACCESS_CODES
 // Where a streamer signs in with Discord to get their Hindsight code.
 constexpr const char *kGetCodeUrl = "https://connect.digitalgroundgame.org";
+#endif
 
 QString text(const char *key)
 {
@@ -356,6 +358,7 @@ void open_settings_dialog(void *)
 	claude.status = add_status_line(status, &dialog);
 	claude.saved_text = "Hindsight.ClaudeKeySaved";
 	claude.missing_text = "Hindsight.ClaudeKeyMissing";
+#ifdef HINDSIGHT_ACCESS_CODES
 	auto *get_code = new QPushButton(text("Hindsight.GetCode"), &dialog);
 	KeyRow code = add_key_row(form, "Hindsight.HindsightCode", &dialog, get_code);
 	code.status = add_status_line(status, &dialog);
@@ -363,6 +366,7 @@ void open_settings_dialog(void *)
 	code.missing_text = "Hindsight.CodeMissing";
 	QObject::connect(get_code, &QPushButton::clicked, &dialog,
 			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetCodeUrl))); });
+#endif
 	add_note(keys, "Hindsight.SettingsNote", "Hindsight.SettingsNoteDetails", &dialog);
 	layout->addWidget(keys_box);
 
@@ -371,7 +375,9 @@ void open_settings_dialog(void *)
 
 	const Secrets saved = secret_store_get();
 	show_saved_state(claude, !saved.claude_api_key.empty());
+#ifdef HINDSIGHT_ACCESS_CODES
 	show_saved_state(code, !saved.hindsight_code.empty());
+#endif
 
 	QObject::connect(claude.forget, &QPushButton::clicked, &dialog, [claude]() {
 		if (secret_store_forget(SecretKey::ClaudeApiKey)) {
@@ -379,12 +385,14 @@ void open_settings_dialog(void *)
 			show_saved_state(claude, false);
 		}
 	});
+#ifdef HINDSIGHT_ACCESS_CODES
 	QObject::connect(code.forget, &QPushButton::clicked, &dialog, [code]() {
 		if (secret_store_forget(SecretKey::HindsightCode)) {
 			code.edit->clear();
 			show_saved_state(code, false);
 		}
 	});
+#endif
 
 	// More: the update check setting and the saved clips.
 	auto *more_box = new QGroupBox(text("Hindsight.MoreTitle"), &dialog);
@@ -427,15 +435,17 @@ void open_settings_dialog(void *)
 	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
-		typed.hindsight_code = code.edit->text().toStdString();
 		const bool checking = check_updates->isChecked();
 
+#ifdef HINDSIGHT_ACCESS_CODES
+		typed.hindsight_code = code.edit->text().toStdString();
 		const std::string typed_code = clean_key(typed.hindsight_code);
 		if (!typed_code.empty() && !is_hindsight_code(typed_code)) {
 			error->setText(text("Hindsight.BadCode"));
 			error->show();
 			return;
 		}
+#endif
 
 		// Blank boxes keep the saved key. On failure the window stays open
 		// so nothing typed is lost.
