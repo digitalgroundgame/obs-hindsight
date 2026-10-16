@@ -20,11 +20,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cctype>
+
 using nlohmann::json;
 
 namespace {
 
 constexpr const char *kToolName = "send_answer";
+constexpr const char *kSearchToolType = "web_search_20250305";
 
 const char *const kSystemPrompt =
 	"You help a live streamer. You get an automatic transcript of the last few seconds of their microphone. "
@@ -34,8 +38,12 @@ const char *const kSystemPrompt =
 	"- Answer directly and briefly, in plain text with no Markdown.\n"
 	"- Keep the answer under 1,700 characters.\n"
 	"- If you are not sure of a fact, say so rather than guess.\n\n"
+	"Search the web first when the answer depends on current or recent information, such as news, ongoing "
+	"events, scores, prices or who holds a post now, and answer from what you find. When you searched, name "
+	"your sources briefly at the end of the answer (for example \"Sources: Reuters, AP\"). Answer stable "
+	"knowledge without searching.\n\n"
 	"If there is no clear question, leave both fields empty. Never invent a question.\n\n"
-	"Always reply by calling the send_answer tool.";
+	"Always reply by calling the send_answer tool, even when there is no question. Never answer in plain text.";
 
 std::string trimmed(const std::string &text)
 {
@@ -63,6 +71,14 @@ long long count_at(const json &object, const char *key)
 	return it->get<long long>();
 }
 
+bool is_web_search_disabled(std::string message)
+{
+	std::transform(message.begin(), message.end(), message.begin(),
+		       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	return message.find("not enabled") != std::string::npos &&
+	       (message.find("web search") != std::string::npos || message.find("web_search") != std::string::npos);
+}
+
 ClaudeAnswer failure(std::string type, std::string message = {})
 {
 	ClaudeAnswer result;
@@ -73,11 +89,12 @@ ClaudeAnswer failure(std::string type, std::string message = {})
 
 } // namespace
 
-double claude_cost_dollars(long long input_tokens, long long output_tokens)
+double claude_cost_dollars(long long input_tokens, long long output_tokens, long long web_searches)
 {
 	return (static_cast<double>(input_tokens) * kClaudeInputDollarsPerMillion +
 		static_cast<double>(output_tokens) * kClaudeOutputDollarsPerMillion) /
-	       1e6;
+		       1e6 +
+	       static_cast<double>(web_searches) * kClaudeDollarsPerSearch;
 }
 
 std::string shorten_text(const std::string &text, size_t max_characters)
@@ -98,8 +115,11 @@ std::string shorten_text(const std::string &text, size_t max_characters)
 	return text;
 }
 
-std::string build_claude_request(const std::string &transcript, const std::string &local_time)
+std::string build_claude_request(const std::string &transcript, const std::string &now,
+				 const std::string &paused_content, int max_searches)
 {
+	// strict keeps the tool's input to this exact shape now that Claude is no
+	// longer forced to call it; strict needs additionalProperties false.
 	const json input_schema = {
 		{"type", "object"},
 		{"properties",
@@ -114,23 +134,51 @@ std::string build_claude_request(const std::string &transcript, const std::strin
 			    "Your answer to that question, in plain text. Empty if there is no question."}}},
 		 }},
 		{"required", {"question", "answer"}},
+		{"additionalProperties", false},
 	};
+
+	json messages = json::array({{
+		{"role", "user"},
+		{"content", (now.empty() ? std::string() : "Current local time: " + now + "\n\n") + "<transcript>\n" +
+				    transcript + "\n</transcript>"},
+	}});
+	if (!paused_content.empty()) {
+		// Sent back exactly as received, so the API can pick the turn up
+		// where it paused.
+		json content = json::parse(paused_content, nullptr, false);
+		if (content.is_array())
+			messages.push_back({{"role", "assistant"}, {"content", std::move(content)}});
+	}
 
 	const json request = {
 		{"model", kClaudeModel},
-		{"max_tokens", 1024},
+		// Thinking counts toward max_tokens, so leave room for it on top of
+		// the answer.
+		{"max_tokens", kClaudeMaxTokens},
+		// Claude decides how long to think; medium effort keeps the wait
+		// short. A forced tool call would skip thinking, so tool_choice is
+		// auto and the system prompt tells Claude to call the tool.
+		{"thinking", {{"type", "adaptive"}}},
+		{"output_config", {{"effort", kClaudeEffort}}},
 		{"system", kSystemPrompt},
-		{"tools", json::array({{
-				  {"name", kToolName},
-				  {"description", "Send the question you found and your answer to the streamer."},
-				  {"input_schema", input_schema},
-			  }})},
-		{"tool_choice", {{"type", "tool"}, {"name", kToolName}}},
-		{"messages", json::array({{
-				     {"role", "user"},
-				     {"content", "<local_time>" + local_time + "</local_time>\n<transcript>\n" +
-							 transcript + "\n</transcript>"},
-			     }})},
+		// Basic web search: Claude calls it directly. The newer versions filter
+		// results by running code first, which adds to the wait.
+		{"tools",
+		 json::array({
+			 {
+				 {"type", kSearchToolType},
+				 {"name", "web_search"},
+				 {"max_uses", max_searches},
+			 },
+			 {
+				 {"name", kToolName},
+				 {"description", "Send the question you found and your answer to the streamer."},
+				 {"input_schema", input_schema},
+				 {"strict", true},
+			 },
+		 })},
+		{"tool_choice", {{"type", "auto"}}},
+		{"messages", std::move(messages)},
 	};
 	// Replace bad UTF-8 from the transcript rather than throw.
 	return request.dump(-1, ' ', false, json::error_handler_t::replace);
@@ -152,6 +200,10 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 				// its own for this, so the message is the only way to tell.
 				if (status == 400 && message.find("anthropic-workspace-id") != std::string::npos)
 					return failure(kWorkspaceKeyError, std::move(message));
+				// Likewise for web search turned off in the Console: the API
+				// says web search is not enabled.
+				if (status == 400 && is_web_search_disabled(message))
+					return failure(kWebSearchDisabledError, std::move(message));
 				if (!type.empty())
 					return failure(type, std::move(message));
 			}
@@ -165,20 +217,41 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 	if (content == reply.end() || !content->is_array())
 		return failure("bad_response");
 
+	ClaudeAnswer result;
+	// usage.output_tokens includes the thinking tokens, which are billed as
+	// output, so the cost covers them.
+	const auto usage = reply.find("usage");
+	if (usage != reply.end() && usage->is_object()) {
+		result.input_tokens = count_at(*usage, "input_tokens");
+		result.output_tokens = count_at(*usage, "output_tokens");
+		const auto server_tools = usage->find("server_tool_use");
+		if (server_tools != usage->end() && server_tools->is_object())
+			result.web_searches = count_at(*server_tools, "web_search_requests");
+	}
+
+	std::string text;              // any plain text Claude wrote outside the tool call
+	std::string text_after_search; // the part of it after the last search result
+	bool searched = result.web_searches > 0;
 	for (const json &block : *content) {
-		if (!block.is_object() || string_at(block, "type") != "tool_use" ||
-		    string_at(block, "name") != kToolName)
+		if (!block.is_object())
 			continue;
+		const std::string type = string_at(block, "type");
+		if (type == "text") {
+			text += string_at(block, "text");
+			text_after_search += string_at(block, "text");
+			continue;
+		}
+		if (type == "web_search_tool_result") {
+			searched = true;
+			text_after_search.clear();
+			continue;
+		}
+		if (type != "tool_use" || string_at(block, "name") != kToolName)
+			continue; // thinking, web search calls and their results, among others
 		const auto input = block.find("input");
 		if (input == block.end() || !input->is_object())
 			return failure("bad_response");
 
-		ClaudeAnswer result;
-		const auto usage = reply.find("usage");
-		if (usage != reply.end() && usage->is_object()) {
-			result.input_tokens = count_at(*usage, "input_tokens");
-			result.output_tokens = count_at(*usage, "output_tokens");
-		}
 		result.question = trimmed(string_at(*input, "question"));
 		result.answer = shorten_text(trimmed(string_at(*input, "answer")), kMaxAnswerCharacters);
 		// A question with no answer (or the reverse) has nothing to send.
@@ -191,6 +264,36 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 		}
 		return result;
 	}
-	// Claude stopped before calling the tool, say at max_tokens.
-	return failure("bad_response", "stop_reason " + string_at(reply, "stop_reason"));
+
+	const std::string stop_reason = string_at(reply, "stop_reason");
+	// The API paused a long turn of searching. Sending the content back
+	// unchanged lets Claude finish it.
+	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool#pause-turn-stop-reason
+	if (stop_reason == "pause_turn") {
+		result.outcome = ClaudeAnswer::Outcome::paused;
+		result.paused_content = content->dump(-1, ' ', false, json::error_handler_t::replace);
+		return result;
+	}
+	// Now that the call is not forced, Claude may reply in plain text
+	// instead. That is most often a remark that there is no question ("I
+	// don't see a question"), which must not reach the streamer, so plain
+	// text counts as no question.
+	// After searching, though, plain text is most likely the answer itself,
+	// written with citations the way search results invite, so it is sent
+	// rather than thrown away with the searches it paid for.
+	if (stop_reason == "end_turn" && searched && !trimmed(text_after_search).empty()) {
+		result.answer = shorten_text(trimmed(text_after_search), kMaxAnswerCharacters);
+		result.outcome = ClaudeAnswer::Outcome::answered;
+		return result;
+	}
+	if (stop_reason == "end_turn" && !trimmed(text).empty()) {
+		result.outcome = ClaudeAnswer::Outcome::no_question;
+		return result;
+	}
+	// Claude stopped before answering, say at max_tokens or with a refusal.
+	ClaudeAnswer failed = failure("bad_response", "stop_reason " + stop_reason);
+	failed.input_tokens = result.input_tokens;
+	failed.output_tokens = result.output_tokens;
+	failed.web_searches = result.web_searches;
+	return failed;
 }

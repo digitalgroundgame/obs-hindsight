@@ -29,8 +29,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace {
 
-// An answer is a few KB; stop well before anything odd.
-constexpr std::size_t kMaxResponseBytes = 256 * 1024;
+// An answer is a few KB, but the search results Claude read come back with it
+// (encrypted), so allow for those; stop well before anything odd.
+constexpr std::size_t kMaxResponseBytes = 1024 * 1024;
+
+// How many times to resume a turn the API paused while Claude searched. With
+// kClaudeMaxSearches capping the searches, one is plenty; more would only
+// make the streamer wait.
+constexpr int kMaxResumes = 1;
 
 size_t append_body(char *data, size_t size, size_t count, void *user)
 {
@@ -56,15 +62,12 @@ ClaudeAnswer failed(const char *type, std::string message)
 	return result;
 }
 
-} // namespace
-
-ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_key, const std::atomic<bool> &cancel)
+ClaudeAnswer send(const std::string &request, const std::string &api_key, const std::atomic<bool> &cancel)
 {
 	CURL *curl = curl_easy_init();
 	if (!curl)
 		return failed("network", "curl failed to start");
 
-	const std::string request = build_claude_request(transcript, local_time_text());
 	std::string body;
 
 	curl_slist *headers = nullptr;
@@ -102,5 +105,37 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 	if (answer.outcome == ClaudeAnswer::Outcome::failed)
 		obs_log(LOG_WARNING, "Claude request failed (HTTP %ld, %s): %s", status, answer.error_type.c_str(),
 			answer.error_message.c_str());
+	return answer;
+}
+
+} // namespace
+
+ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_key, const std::atomic<bool> &cancel)
+{
+	const std::string now = local_time_text();
+	ClaudeAnswer answer = send(build_claude_request(transcript, now), api_key, cancel);
+	long long input_tokens = answer.input_tokens;
+	long long output_tokens = answer.output_tokens;
+	long long web_searches = answer.web_searches;
+	for (int resumes = 0; answer.outcome == ClaudeAnswer::Outcome::paused && resumes < kMaxResumes; resumes++) {
+		// max_uses counts per request, so pass on only the searches left.
+		const long long searches_left = kClaudeMaxSearches - web_searches;
+		if (searches_left <= 0)
+			break;
+		answer = send(build_claude_request(transcript, now, answer.paused_content,
+						   static_cast<int>(searches_left)),
+			      api_key, cancel);
+		input_tokens += answer.input_tokens;
+		output_tokens += answer.output_tokens;
+		web_searches += answer.web_searches;
+	}
+	if (answer.outcome == ClaudeAnswer::Outcome::paused) {
+		obs_log(LOG_WARNING, "Claude was still searching after the API paused it; giving up");
+		answer = failed("bad_response", "stop_reason pause_turn");
+	}
+	// Every request was billed, so the cost covers them all.
+	answer.input_tokens = input_tokens;
+	answer.output_tokens = output_tokens;
+	answer.web_searches = web_searches;
 	return answer;
 }
