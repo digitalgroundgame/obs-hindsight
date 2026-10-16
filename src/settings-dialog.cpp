@@ -34,48 +34,144 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QGridLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QStyle>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
 namespace {
 
+QString text(const char *key)
+{
+	return QString::fromUtf8(obs_module_text(key));
+}
+
+// How a status line looks. OBS's own themes (Yami and its light and classic
+// variants, OBS 30 and later) colour labels by their "class" property, the way
+// OBS's setClasses() sets it, so the marks follow the streamer's theme:
+// https://github.com/obsproject/obs-studio/blob/31.1.1/frontend/data/themes/Yami.obt
+// A theme without these classes still shows the mark, just uncoloured.
+enum class Mark { good, busy, attention, bad };
+
+const char *mark_glyph(Mark mark)
+{
+	switch (mark) {
+	case Mark::good:
+		return "✓"; // ✓
+	case Mark::busy:
+		return "…"; // …
+	case Mark::attention:
+		return "!";
+	case Mark::bad:
+		return "✕"; // ✕
+	}
+	return "";
+}
+
+const char *mark_class(Mark mark)
+{
+	switch (mark) {
+	case Mark::good:
+		return "text-success";
+	case Mark::busy:
+		return "text-muted";
+	case Mark::attention:
+		return "text-warning";
+	case Mark::bad:
+		return "text-danger";
+	}
+	return "";
+}
+
+// Sets a label's theme class. Qt only restyles a widget for a changed
+// property when it is polished again, so this skips labels already showing it
+// (the status timers call this several times a second).
+void set_class(QLabel *label, const char *name)
+{
+	const QString wanted = QString::fromUtf8(name);
+	if (label->property("class").toString() == wanted)
+		return;
+	label->setProperty("class", wanted);
+	label->style()->unpolish(label);
+	label->style()->polish(label);
+}
+
+// One line of the Status box: a coloured mark, what it means, and room for a
+// button or two on the right.
+struct StatusLine {
+	QLabel *mark = nullptr;
+	QLabel *label = nullptr;
+	QHBoxLayout *buttons = nullptr;
+};
+
+StatusLine add_status_line(QGridLayout *grid, QWidget *parent)
+{
+	StatusLine line;
+	const int row = grid->rowCount();
+	line.mark = new QLabel(parent);
+	QFont bold = line.mark->font();
+	bold.setBold(true);
+	line.mark->setFont(bold);
+	line.mark->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+	line.mark->setMinimumWidth(line.mark->fontMetrics().horizontalAdvance(QStringLiteral("✕")) + 4);
+	line.label = new QLabel(parent);
+	line.label->setWordWrap(true);
+	line.buttons = new QHBoxLayout();
+	grid->addWidget(line.mark, row, 0);
+	grid->addWidget(line.label, row, 1);
+	grid->addLayout(line.buttons, row, 2);
+	return line;
+}
+
+void show_status(const StatusLine &line, Mark mark, const QString &message)
+{
+	line.mark->setText(QString::fromUtf8(mark_glyph(mark)));
+	set_class(line.mark, mark_class(mark));
+	line.label->setText(message);
+}
+
 // One key's row: a password box that starts empty (saved keys are never
-// shown) and a button to forget the saved key.
+// shown) and a button to forget the saved key. Its line in the Status box says
+// whether one is saved.
 struct KeyRow {
 	QLineEdit *edit = nullptr;
 	QPushButton *forget = nullptr;
+	StatusLine status;
+	const char *saved_text = nullptr;
+	const char *missing_text = nullptr;
 };
 
 void show_saved_state(const KeyRow &row, bool saved)
 {
-	row.edit->setPlaceholderText(
-		QString::fromUtf8(obs_module_text(saved ? "Hindsight.KeySaved" : "Hindsight.KeyNotSet")));
+	row.edit->setPlaceholderText(text(saved ? "Hindsight.KeySaved" : "Hindsight.KeyNotSet"));
 	row.forget->setEnabled(saved);
+	show_status(row.status, saved ? Mark::good : Mark::attention, text(saved ? row.saved_text : row.missing_text));
 }
 
-KeyRow add_key_row(QFormLayout *form, const char *label, const char *forget_label, QWidget *parent)
+KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent)
 {
 	KeyRow row;
 	row.edit = new QLineEdit(parent);
 	row.edit->setEchoMode(QLineEdit::Password);
-	row.forget = new QPushButton(QString::fromUtf8(obs_module_text(forget_label)), parent);
+	row.forget = new QPushButton(text("Hindsight.Forget"), parent);
 
 	auto *line = new QHBoxLayout();
 	line->addWidget(row.edit, 1);
 	line->addWidget(row.forget);
-	form->addRow(QString::fromUtf8(obs_module_text(label)), line);
+	form->addRow(text(label), line);
 	return row;
 }
 
 // The speech models' check or download, refreshed while the window is open.
 struct ModelRow {
-	QLabel *label = nullptr;
+	StatusLine status;
 	QProgressBar *progress = nullptr;
 	QPushButton *retry = nullptr;
 };
@@ -85,28 +181,40 @@ QString model_status_text(const SpeechModelStatus &status)
 	const bool speech = status.model == SpeechModelStatus::Model::speech;
 	switch (status.state) {
 	case SpeechModelStatus::State::checking:
-		return QString::fromUtf8(obs_module_text("Hindsight.ModelChecking"));
+		return text("Hindsight.ModelChecking");
 	case SpeechModelStatus::State::downloading:
 		if (status.total <= 0)
-			return QString::fromUtf8(obs_module_text(speech ? "Hindsight.ModelDownloadingSpeech"
-									: "Hindsight.ModelDownloadingVad"));
-		return QString::fromUtf8(obs_module_text(speech ? "Hindsight.ModelDownloadingSpeechSize"
-								: "Hindsight.ModelDownloadingVadSize"))
+			return text(speech ? "Hindsight.ModelDownloadingSpeech" : "Hindsight.ModelDownloadingVad");
+		return text(speech ? "Hindsight.ModelDownloadingSpeechSize" : "Hindsight.ModelDownloadingVadSize")
 			.arg(QString::number(static_cast<double>(status.downloaded) / 1e6, 'f', 0),
 			     QString::number(static_cast<double>(status.total) / 1e6, 'f', 0));
 	case SpeechModelStatus::State::ready:
-		return QString::fromUtf8(obs_module_text("Hindsight.ModelReady"));
+		return text("Hindsight.ModelReady");
 	case SpeechModelStatus::State::failed:
-		return QString::fromUtf8(
-			obs_module_text(speech ? "Hindsight.ModelFailedSpeech" : "Hindsight.ModelFailedVad"));
+		return text(speech ? "Hindsight.ModelFailedSpeech" : "Hindsight.ModelFailedVad");
 	}
 	return {};
+}
+
+Mark model_mark(const SpeechModelStatus &status)
+{
+	switch (status.state) {
+	case SpeechModelStatus::State::checking:
+	case SpeechModelStatus::State::downloading:
+		return Mark::busy;
+	case SpeechModelStatus::State::ready:
+		return Mark::good;
+	case SpeechModelStatus::State::failed:
+		// Without voice detection Hindsight still transcribes, only slower.
+		return status.model == SpeechModelStatus::Model::speech ? Mark::bad : Mark::attention;
+	}
+	return Mark::busy;
 }
 
 void show_model_status(const ModelRow &row)
 {
 	const SpeechModelStatus status = speech_model_status();
-	row.label->setText(model_status_text(status));
+	show_status(row.status, model_mark(status), model_status_text(status));
 	row.retry->setVisible(status.state == SpeechModelStatus::State::failed);
 
 	const bool busy = status.state == SpeechModelStatus::State::checking ||
@@ -121,20 +229,15 @@ void show_model_status(const ModelRow &row)
 	}
 }
 
-void add_model_row(QVBoxLayout *layout, QDialog *dialog)
+void add_model_row(QGridLayout *grid, QDialog *dialog)
 {
 	ModelRow row;
-	row.label = new QLabel(dialog);
-	row.label->setWordWrap(true);
+	row.status = add_status_line(grid, dialog);
+	row.retry = new QPushButton(text("Hindsight.ModelRetry"), dialog);
+	row.status.buttons->addWidget(row.retry);
 	row.progress = new QProgressBar(dialog);
 	row.progress->setTextVisible(false);
-	row.retry = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.ModelRetry")), dialog);
-
-	auto *line = new QHBoxLayout();
-	line->addWidget(row.label, 1);
-	line->addWidget(row.retry);
-	layout->addLayout(line);
-	layout->addWidget(row.progress);
+	grid->addWidget(row.progress, grid->rowCount(), 1, 1, 2);
 
 	QObject::connect(row.retry, &QPushButton::clicked, dialog, [row]() {
 		speech_model_start();
@@ -146,32 +249,45 @@ void add_model_row(QVBoxLayout *layout, QDialog *dialog)
 	show_model_status(row);
 }
 
-// The same update notice as the filter's settings, at the top of the window,
-// or a Check for updates button when there is none. A timer redraws it while
-// the window is open, so it follows a check or a download.
-void add_update_notice(QVBoxLayout *layout, QDialog *dialog)
+Mark update_mark(const UpdateNotice &notice)
 {
-	auto *text = new QLabel(dialog);
-	text->setWordWrap(true);
-	layout->addWidget(text);
+	if (notice.is_error)
+		return Mark::bad;
+	if (notice.show)
+		return Mark::attention;
+	switch (update_check_state()) {
+	case UpdateCheckState::up_to_date:
+		return Mark::good;
+	case UpdateCheckState::failed:
+		return Mark::bad;
+	case UpdateCheckState::not_checked:
+	case UpdateCheckState::checking:
+	case UpdateCheckState::newer:
+		break;
+	}
+	return Mark::busy;
+}
+
+// The same update notice as the filter's settings, as the Status box's last
+// line, or how the last check went with a Check for updates button. A timer
+// redraws it while the window is open, so it follows a check or a download.
+void add_update_line(QGridLayout *grid, QDialog *dialog)
+{
+	const StatusLine line = add_status_line(grid, dialog);
 	auto *progress = new QProgressBar(dialog);
 	progress->setRange(0, 100);
-	layout->addWidget(progress);
-	auto *update_now = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.UpdateNow")), dialog);
-	auto *release_page = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.DownloadUpdate")), dialog);
-	auto *check_now = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.CheckNow")), dialog);
-	auto *line = new QHBoxLayout();
-	line->addWidget(update_now);
-	line->addWidget(release_page);
-	line->addWidget(check_now);
-	line->addStretch(1);
-	layout->addLayout(line);
+	grid->addWidget(progress, grid->rowCount(), 1, 1, 2);
+	auto *update_now = new QPushButton(text("Hindsight.UpdateNow"), dialog);
+	auto *release_page = new QPushButton(text("Hindsight.DownloadUpdate"), dialog);
+	auto *check_now = new QPushButton(text("Hindsight.CheckNow"), dialog);
+	line.buttons->addWidget(update_now);
+	line.buttons->addWidget(release_page);
+	line.buttons->addWidget(check_now);
 
-	auto refresh = [text, progress, update_now, release_page, check_now]() {
+	auto refresh = [line, progress, update_now, release_page, check_now]() {
 		const UpdateNotice notice = update_notice_current();
 		const std::string status = notice.show ? notice.text : update_check_status_text();
-		text->setText(QString::fromStdString(status));
-		text->setVisible(!status.empty());
+		show_status(line, update_mark(notice), QString::fromStdString(status));
 		progress->setVisible(notice.percent >= 0);
 		progress->setValue(notice.percent >= 0 ? notice.percent : 0);
 		update_now->setVisible(notice.offer_update_now);
@@ -197,26 +313,52 @@ void add_update_notice(QVBoxLayout *layout, QDialog *dialog)
 	timer->start(500);
 }
 
+// A short grey line under a box's controls; the details are in its tooltip.
+QLabel *add_note(QLayout *layout, const char *note, const char *details, QWidget *parent)
+{
+	auto *label = new QLabel(text(note), parent);
+	label->setWordWrap(true);
+	if (details)
+		label->setToolTip(text(details));
+	set_class(label, "text-muted");
+	layout->addWidget(label);
+	return label;
+}
+
 void open_settings_dialog(void *)
 {
 	auto *main_window = static_cast<QWidget *>(obs_frontend_get_main_window());
 	QDialog dialog(main_window);
-	dialog.setWindowTitle(QString::fromUtf8(obs_module_text("Hindsight.SettingsTitle")));
-	dialog.setMinimumWidth(480);
+	dialog.setWindowTitle(text("Hindsight.SettingsTitle"));
+	dialog.setMinimumWidth(520);
 
 	auto *layout = new QVBoxLayout(&dialog);
-	add_update_notice(layout, &dialog);
 
-	auto *note = new QLabel(QString::fromUtf8(obs_module_text("Hindsight.SettingsNote")), &dialog);
-	note->setWordWrap(true);
-	layout->addWidget(note);
+	// Status: one line per thing Hindsight needs, each with its mark, so a
+	// streamer can tell at a glance whether it is ready.
+	auto *status_box = new QGroupBox(text("Hindsight.StatusTitle"), &dialog);
+	auto *status = new QGridLayout(status_box);
+	status->setColumnStretch(1, 1);
+	layout->addWidget(status_box);
 
+	// Keys: the boxes to type them in. Each key's line in Status comes first.
+	auto *keys_box = new QGroupBox(text("Hindsight.KeysTitle"), &dialog);
+	auto *keys = new QVBoxLayout(keys_box);
 	auto *form = new QFormLayout();
-	layout->addLayout(form);
-	const KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", "Hindsight.Forget", &dialog);
-	const KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", "Hindsight.Forget", &dialog);
+	keys->addLayout(form);
+	KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", &dialog);
+	claude.status = add_status_line(status, &dialog);
+	claude.saved_text = "Hindsight.ClaudeKeySaved";
+	claude.missing_text = "Hindsight.ClaudeKeyMissing";
+	KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", &dialog);
+	discord.status = add_status_line(status, &dialog);
+	discord.saved_text = "Hindsight.DiscordTokenSaved";
+	discord.missing_text = "Hindsight.DiscordTokenMissing";
+	add_note(keys, "Hindsight.SettingsNote", "Hindsight.SettingsNoteDetails", &dialog);
+	layout->addWidget(keys_box);
 
-	add_model_row(layout, &dialog);
+	add_model_row(status, &dialog);
+	add_update_line(status, &dialog);
 
 	const Secrets saved = secret_store_get();
 	show_saved_state(claude, !saved.claude_api_key.empty());
@@ -235,35 +377,37 @@ void open_settings_dialog(void *)
 		}
 	});
 
+	// More: the update check setting and the saved clips.
+	auto *more_box = new QGroupBox(text("Hindsight.MoreTitle"), &dialog);
+	auto *more = new QVBoxLayout(more_box);
+	layout->addWidget(more_box);
+
 	// The update check reads this once when OBS starts, so a change here
 	// takes effect at the next start.
 	const bool was_checking = plugin_settings_check_for_updates();
-	auto *check_updates = new QCheckBox(QString::fromUtf8(obs_module_text("Hindsight.CheckForUpdates")), &dialog);
+	auto *check_updates = new QCheckBox(text("Hindsight.CheckForUpdates"), &dialog);
 	check_updates->setChecked(was_checking);
-	layout->addWidget(check_updates);
-	auto *check_updates_note =
-		new QLabel(QString::fromUtf8(obs_module_text("Hindsight.CheckForUpdatesNote")), &dialog);
-	check_updates_note->setWordWrap(true);
-	layout->addWidget(check_updates_note);
+	check_updates->setToolTip(text("Hindsight.CheckForUpdatesNote"));
+	more->addWidget(check_updates);
 
 	// Deleting clips happens at once, not on Save: it has nothing to undo.
 	auto *clips_line = new QHBoxLayout();
-	auto *clips_note = new QLabel(QString::fromUtf8(obs_module_text("Hindsight.ClipsNote")), &dialog);
+	auto *clips_note = new QLabel(text("Hindsight.ClipsNote"), &dialog);
 	clips_note->setWordWrap(true);
-	auto *delete_clips = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.DeleteClips")), &dialog);
+	auto *delete_clips = new QPushButton(text("Hindsight.DeleteClips"), &dialog);
 	clips_line->addWidget(clips_note, 1);
 	clips_line->addWidget(delete_clips);
-	layout->addLayout(clips_line);
+	more->addLayout(clips_line);
 	QObject::connect(delete_clips, &QPushButton::clicked, &dialog, [clips_note]() {
 		const std::string folder = hindsight_clips_folder();
 		const size_t deleted = folder.empty() ? 0 : delete_old_clips(folder, 0);
 		obs_log(LOG_INFO, "deleted %zu saved clips", deleted);
-		clips_note->setText(QString::fromUtf8(obs_module_text("Hindsight.ClipsDeleted"))
-					    .arg(static_cast<qulonglong>(deleted)));
+		clips_note->setText(text("Hindsight.ClipsDeleted").arg(static_cast<qulonglong>(deleted)));
 	});
 
-	auto *error = new QLabel(QString::fromUtf8(obs_module_text("Hindsight.SaveFailed")), &dialog);
+	auto *error = new QLabel(text("Hindsight.SaveFailed"), &dialog);
 	error->setWordWrap(true);
+	set_class(error, "text-danger");
 	error->hide();
 	layout->addWidget(error);
 

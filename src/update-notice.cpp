@@ -104,6 +104,7 @@ std::string update_check_status_text()
 	case UpdateCheckState::failed:
 		return obs_module_text("Hindsight.UpdateCheckFailed");
 	case UpdateCheckState::not_checked:
+		return with_version("Hindsight.UpdateNotChecked", PLUGIN_VERSION);
 	case UpdateCheckState::newer:
 		break;
 	}
