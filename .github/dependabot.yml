@@ -1,0 +1,16 @@
+# Opens one PR a week that bumps the GitHub Actions the workflows and the
+# local composite actions use. Other pins (OBS, the plugin template,
+# whisper.cpp) are in formats Dependabot cannot read; the monthly
+# upstream-check workflow flags those.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - '*'
