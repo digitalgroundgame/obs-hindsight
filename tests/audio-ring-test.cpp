@@ -121,6 +121,38 @@ void silent_chunk_gives_silence()
 	CHECK(ring.snapshot() == (std::vector<float>{0.0f, 0.0f, 0.0f}));
 }
 
+void level_holds_when_a_channel_goes_quiet()
+{
+	AudioRing ring;
+	ring.reset(8);
+	const std::vector<float> left = {1.0f, 1.0f};
+	const std::vector<float> right = {1.0f, 1.0f};
+	const std::vector<float> zero = {0.0f, 0.0f};
+	const float *both[] = {left.data(), right.data()};
+	ring.push_planar(both, 2, 2);
+
+	// The right channel is silent for a whole chunk (a pan or a gate). It
+	// still counts, so the left channel is not suddenly twice as loud.
+	const float *left_only[] = {left.data(), zero.data()};
+	ring.push_planar(left_only, 2, 2);
+	CHECK(ring.snapshot() == (std::vector<float>{1.0f, 1.0f, 0.5f, 0.5f}));
+}
+
+void reset_forgets_which_channels_were_heard()
+{
+	AudioRing ring;
+	ring.reset(8);
+	const std::vector<float> one = {1.0f};
+	const std::vector<float> zero = {0.0f};
+	const float *both[] = {one.data(), one.data()};
+	ring.push_planar(both, 2, 1);
+
+	ring.reset(8);
+	const float *left_only[] = {one.data(), zero.data()};
+	ring.push_planar(left_only, 2, 1);
+	CHECK(ring.snapshot() == (std::vector<float>{1.0f}));
+}
+
 void reset_clears_buffered_audio()
 {
 	AudioRing ring;
@@ -274,6 +306,8 @@ int main()
 	surround_mic_on_one_channel_keeps_its_level();
 	surround_mic_on_two_channels_keeps_its_level();
 	silent_chunk_gives_silence();
+	level_holds_when_a_channel_goes_quiet();
+	reset_forgets_which_channels_were_heard();
 	reset_clears_buffered_audio();
 	copy_to_matches_snapshot_after_wrapping();
 	copy_to_reuses_reserved_space();

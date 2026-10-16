@@ -31,16 +31,21 @@ AudioRing::~AudioRing()
 	deque_free(&queue);
 }
 
-AudioRing::AudioRing(AudioRing &&other) noexcept : queue(other.queue), max_samples(other.max_samples)
+AudioRing::AudioRing(AudioRing &&other) noexcept
+	: queue(other.queue),
+	  max_samples(other.max_samples),
+	  heard(other.heard)
 {
 	deque_init(&other.queue);
 	other.max_samples = 0;
+	other.heard = {};
 }
 
 AudioRing &AudioRing::operator=(AudioRing &&other) noexcept
 {
 	std::swap(queue, other.queue);
 	std::swap(max_samples, other.max_samples);
+	std::swap(heard, other.heard);
 	return *this;
 }
 
@@ -49,6 +54,7 @@ void AudioRing::reset(std::size_t capacity)
 	deque_free(&queue);
 	deque_reserve(&queue, capacity * sizeof(float));
 	max_samples = capacity;
+	heard = {};
 }
 
 void AudioRing::clear()
@@ -61,21 +67,24 @@ void AudioRing::push_planar(const float *const *planes, std::size_t channels, st
 	if (max_samples == 0 || channels == 0)
 		return;
 
-	// Count the channels that carry sound in this chunk. A mic usually
-	// feeds one or two of them; averaging over all six of a 5.1 layout
-	// would play it at a third of its level or less. Silent channels add
-	// nothing to the sum, so dividing by this count is all it takes.
-	std::size_t active = 0;
-	for (std::size_t ch = 0; ch < channels; ch++) {
+	// Remember which channels have carried sound since reset(). A mic
+	// usually feeds one or two of them; averaging over all six of a 5.1
+	// layout would play it at a third of its level or less. Once heard, a
+	// channel keeps counting even through a silent chunk, so the level
+	// never jumps between chunks when one side goes quiet for a moment.
+	// Silent channels add nothing to the sum, so dividing by this count is
+	// all it takes.
+	for (std::size_t ch = 0; ch < channels && ch < kMaxChannels; ch++) {
 		const float *plane = planes[ch];
-		if (plane && std::any_of(plane, plane + frames, [](float s) { return s != 0.0f; }))
-			active++;
+		if (!heard[ch] && plane && std::any_of(plane, plane + frames, [](float s) { return s != 0.0f; }))
+			heard[ch] = true;
 	}
+	const auto active = static_cast<std::size_t>(std::count(heard.begin(), heard.end(), true));
 	const float scale = active > 0 ? 1.0f / static_cast<float>(active) : 0.0f;
 
 	for (std::size_t frame = 0; frame < frames; frame++) {
 		float sum = 0.0f;
-		for (std::size_t ch = 0; ch < channels; ch++)
+		for (std::size_t ch = 0; ch < channels && ch < kMaxChannels; ch++)
 			sum += planes[ch] ? planes[ch][frame] : 0.0f;
 		const float sample = sum * scale;
 
