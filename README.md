@@ -103,9 +103,11 @@ Every pull request runs these on GitHub Actions:
 
 - **Builds** on Windows, macOS and Ubuntu with warnings treated as errors.
 - **Formatting** with clang-format (C/C++) and gersemi (CMake).
-- **Unit tests** for the code that does not need OBS (the audio buffer, the
-  WAV encoder and the version comparison), once plain and once under AddressSanitizer and
+- **Unit tests** for the code that does not need OBS (the audio buffer and its
+  freshness checks, the WAV encoder, the saved keys and the version comparison)
+  on Ubuntu, once plain and once under AddressSanitizer and
   UndefinedBehaviorSanitizer, which catch memory bugs and undefined behavior.
+  They also run on Windows, the only place the key encryption code runs.
 - **clang-tidy**, with the bug-finding rules listed in [.clang-tidy](.clang-tidy).
 
 To run the unit tests locally (no OBS needed):
@@ -116,8 +118,11 @@ cmake --build build_tests
 ctest --test-dir build_tests --output-on-failure
 ```
 
-Code that OBS does not need to run, like the audio buffer, goes in its own
-file under `src/` without OBS includes, so it can be tested this way.
+Code that OBS does not need to run, like the WAV encoder, goes in its own
+file under `src/` without OBS includes, so it can be tested this way. The audio
+buffer is the one exception: it uses libobs's header-only `util/deque.h`, which
+the test build downloads for the OBS version in `buildspec.json` (so the first
+configure needs internet access).
 
 ## License
 

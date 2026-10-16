@@ -17,9 +17,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "audio-freshness.hpp"
+#include "audio-ring.hpp"
 #include "check.hpp"
 
 #include <cstdint>
+#include <vector>
 
 namespace {
 
@@ -75,6 +77,33 @@ void gap_detection()
 	CHECK(audio_resumed_after_gap(last, last + 3600 * kSecond));
 }
 
+// The filter's audio callback: clear the ring after a pause, then push.
+void push_at(AudioRing &ring, uint64_t &last_push_ns, uint64_t now, const std::vector<float> &samples)
+{
+	if (audio_resumed_after_gap(last_push_ns, now))
+		ring.clear();
+	const float *planes[] = {samples.data()};
+	ring.push_planar(planes, 1, samples.size());
+	last_push_ns = now;
+}
+
+void pause_then_resume_starts_over()
+{
+	AudioRing ring;
+	ring.reset(4);
+	uint64_t last = 0;
+
+	push_at(ring, last, 10 * kSecond, {1.0f, 2.0f});
+	// A short stall keeps the buffer.
+	push_at(ring, last, 10 * kSecond + kAudioGapNs, {3.0f});
+	CHECK(ring.snapshot() == (std::vector<float>{1.0f, 2.0f, 3.0f}));
+
+	// A real pause drops the old audio, so it is never joined to the new.
+	push_at(ring, last, 20 * kSecond, {4.0f, 5.0f});
+	CHECK(ring.snapshot() == (std::vector<float>{4.0f, 5.0f}));
+	CHECK(ring.capacity() == 4);
+}
+
 } // namespace
 
 int main()
@@ -85,5 +114,6 @@ int main()
 	audio_older_than_the_window_is_dropped();
 	clock_going_backwards_counts_as_no_time();
 	gap_detection();
+	pause_then_resume_starts_over();
 	return check::finish();
 }

@@ -101,23 +101,69 @@ bool write_secrets(const Secrets &secrets)
 	return false;
 }
 
+// Reads the keys file into secrets. Returns false, leaving secrets empty, if
+// the file exists but could not be read: locked by antivirus or a sync tool,
+// or encrypted for another Windows account or PC. A missing file is just no
+// saved keys.
+bool read_secrets(Secrets &secrets)
+{
+	secrets = Secrets();
+	const std::string path = secrets_path();
+	if (path.empty() || !os_file_exists(path.c_str()))
+		return true;
+
+	char *contents = os_quick_read_utf8_file(path.c_str());
+	if (!contents)
+		return false;
+	std::string text;
+	const bool ok = open_secrets_text(contents, text) && decode_secrets(text, secrets);
+	bfree(contents);
+	if (!ok)
+		secrets = Secrets();
+	return ok;
+}
+
+// True while the keys file exists but has not been read, so the store may be
+// missing keys that are still in the file.
+bool file_unread = false;
+
+// Called before every change to the keys, so a save never replaces a file
+// whose keys were never loaded: tries the file again, since a lock may have
+// cleared since OBS started. Caller holds store_lock.
+void reread_if_needed()
+{
+	if (!file_unread)
+		return;
+	Secrets loaded;
+	if (read_secrets(loaded)) {
+		file_unread = false;
+		store = loaded;
+	}
+}
+
+// Writes the keys, first warning if that replaces a file that still could not
+// be read and a key is blank, since that key is then lost. Caller holds
+// store_lock.
+bool replace_secrets(const Secrets &updated)
+{
+	if (file_unread && (updated.claude_api_key.empty() || updated.discord_bot_token.empty()))
+		obs_log(LOG_WARNING,
+			"the saved keys still cannot be read and this Save replaces them; enter any blank key again");
+	if (!write_secrets(updated))
+		return false;
+	file_unread = false;
+	return true;
+}
+
 } // namespace
 
 void secret_store_load()
 {
-	const std::string path = secrets_path();
-	char *contents = path.empty() ? nullptr : os_quick_read_utf8_file(path.c_str());
-
-	Secrets loaded;
-	if (contents) {
-		std::string text;
-		if (!open_secrets_text(contents, text) || !decode_secrets(text, loaded))
-			obs_log(LOG_WARNING,
-				"could not read the saved keys; enter them again, and the next Save replaces the file");
-		bfree(contents);
-	}
-
 	std::lock_guard<std::mutex> guard(store_lock);
+	Secrets loaded;
+	file_unread = !read_secrets(loaded);
+	if (file_unread)
+		obs_log(LOG_WARNING, "could not read the saved keys; Hindsight tries again before the next Save");
 	store = loaded;
 }
 
@@ -130,11 +176,12 @@ Secrets secret_store_get()
 bool secret_store_save_typed(const Secrets &typed)
 {
 	std::lock_guard<std::mutex> guard(store_lock);
+	reread_if_needed();
 	Secrets updated = store;
 	if (!merge_typed_keys(updated, typed))
 		return true;
 
-	if (!write_secrets(updated))
+	if (!replace_secrets(updated))
 		return false;
 	store = updated;
 	return true;
@@ -143,10 +190,15 @@ bool secret_store_save_typed(const Secrets &typed)
 bool secret_store_take_old_keys(const Secrets &old)
 {
 	std::lock_guard<std::mutex> guard(store_lock);
+	reread_if_needed();
+	// Moving keys happens on its own as filters load, so never let it
+	// replace a file that may hold newer keys; try again on the next load.
+	if (file_unread)
+		return false;
 	Secrets updated = store;
 	if (!fill_empty_keys(updated, old))
 		return true;
-	if (!write_secrets(updated))
+	if (!replace_secrets(updated))
 		return false;
 	obs_log(LOG_INFO, "moved keys from the filter settings into Tools > Hindsight settings");
 	store = updated;
@@ -156,10 +208,11 @@ bool secret_store_take_old_keys(const Secrets &old)
 bool secret_store_forget(SecretKey key)
 {
 	std::lock_guard<std::mutex> guard(store_lock);
+	reread_if_needed();
 	Secrets updated = store;
 	if (!forget_key(updated, key))
 		return true;
-	if (!write_secrets(updated))
+	if (!replace_secrets(updated))
 		return false;
 	store = updated;
 	return true;

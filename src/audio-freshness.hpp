@@ -29,8 +29,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 // OBS hands over audio about every 20 ms. A longer pause than this means the
 // source stopped, and the old audio is dropped instead of being joined to
-// the new audio with no gap.
-constexpr uint64_t kAudioGapNs = 500'000'000;
+// the new audio with no gap. It is a few seconds rather than a fraction of
+// one so a brief stall on OBS's audio thread (a heavy scene switch, a slow
+// disk) does not throw away the whole buffer; fresh_sample_count trims old
+// audio at save time anyway.
+constexpr uint64_t kAudioGapNs = 2'000'000'000;
 
 // Whether audio arriving at now_ns follows a pause long enough that the
 // buffered audio should be dropped first. last_push_ns of 0 means nothing

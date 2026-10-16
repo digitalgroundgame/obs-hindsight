@@ -60,6 +60,9 @@ struct HindsightFilter {
 	AudioRing ring;
 	uint64_t last_push_ns = 0; // when the newest buffered audio arrived
 
+	// The window setting, for log messages.
+	std::atomic<int> window_seconds{kDefaultWindowSeconds};
+
 	// The API keys are not here: every filter shares the ones in
 	// secret-store.cpp.
 	std::string discord_user_id;
@@ -85,8 +88,7 @@ struct ClipJob {
 std::vector<float> snapshot(HindsightFilter *filter)
 {
 	std::vector<float> out;
-	uint64_t last_push_ns = 0;
-	size_t window = 0;
+	const uint64_t now = os_gettime_ns();
 	for (;;) {
 		size_t capacity = 0;
 		{
@@ -94,20 +96,17 @@ std::vector<float> snapshot(HindsightFilter *filter)
 			// Retry if the ring grew since we reserved (the slider moved
 			// between the two locks), so the copy never allocates here.
 			if (out.capacity() >= filter->ring.capacity()) {
-				filter->ring.copy_to(out);
-				last_push_ns = filter->last_push_ns;
-				window = filter->ring.capacity();
+				// If the mic has been quiet in OBS (its scene not
+				// showing), copy only what is still inside the window.
+				const size_t fresh = fresh_sample_count(filter->ring.size(), filter->ring.capacity(),
+									filter->sample_rate, filter->last_push_ns, now);
+				filter->ring.copy_to(out, fresh);
 				break;
 			}
 			capacity = filter->ring.capacity();
 		}
 		out.reserve(capacity);
 	}
-
-	// If the mic has been quiet in OBS (its scene not showing), drop what is
-	// now older than the window.
-	const size_t fresh = fresh_sample_count(out.size(), window, filter->sample_rate, last_push_ns, os_gettime_ns());
-	out.erase(out.begin(), out.begin() + static_cast<std::ptrdiff_t>(out.size() - fresh));
 	return out;
 }
 
@@ -182,7 +181,8 @@ void capture(HindsightFilter *filter)
 	std::vector<float> samples = snapshot(filter);
 	if (samples.empty()) {
 		filter->pending_clips--;
-		obs_log(LOG_WARNING, "no audio buffered yet; is the filter on an active mic?");
+		obs_log(LOG_WARNING, "no audio from the last %d s; is this filter on an active mic?",
+			filter->window_seconds.load());
 		return;
 	}
 
@@ -242,6 +242,7 @@ void update(void *data, obs_data_t *settings)
 	const int seconds = std::clamp(static_cast<int>(obs_data_get_int(settings, "window_seconds")),
 				       kMinWindowSeconds, kMaxWindowSeconds);
 	const size_t size = static_cast<size_t>(seconds) * filter->sample_rate;
+	filter->window_seconds = seconds;
 
 	take_keys_from_settings(settings);
 

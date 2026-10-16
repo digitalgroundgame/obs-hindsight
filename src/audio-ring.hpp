@@ -18,22 +18,37 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
+#include <util/deque.h>
+
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 // The last few seconds of a source, mixed down to mono. Once full, each new
 // sample replaces the oldest. Not thread-safe: the filter guards it with its
-// own lock. Kept free of OBS so the tests can run it on its own.
+// own lock.
+//
+// The samples live in libobs's deque (util/deque.h), the queue OBS itself
+// buffers audio in. It is header-only apart from libobs's allocator, so the
+// unit tests build it with a small stand-in allocator instead of all of OBS.
 class AudioRing {
 public:
-	// Sets how many samples to keep and drops whatever was buffered.
+	AudioRing();
+	~AudioRing();
+	AudioRing(AudioRing &&other) noexcept;
+	AudioRing &operator=(AudioRing &&other) noexcept;
+	AudioRing(const AudioRing &) = delete;
+	AudioRing &operator=(const AudioRing &) = delete;
+
+	// Sets how many samples to keep and drops whatever was buffered. This
+	// allocates all the space up front, so pushing never allocates.
 	void reset(std::size_t capacity);
 
 	// Drops whatever was buffered, keeping the capacity. Never allocates.
 	void clear();
 
-	std::size_t capacity() const { return samples.size(); }
-	std::size_t size() const { return filled; }
+	std::size_t capacity() const { return max_samples; }
+	std::size_t size() const { return queue.size / sizeof(float); }
 
 	// Mixes `frames` frames of planar audio (one array per channel, as OBS
 	// hands it over) down to mono and appends them. A null plane counts as
@@ -43,14 +58,14 @@ public:
 	// Returns the buffered audio, oldest sample first.
 	std::vector<float> snapshot() const;
 
-	// Replaces the contents of out with the buffered audio, oldest sample
-	// first. Does not allocate when out.capacity() >= size(), so the filter
-	// can reserve the space before taking its lock and hold the lock only for
-	// the copy.
-	void copy_to(std::vector<float> &out) const;
+	// Replaces the contents of out with the newest `newest` buffered samples
+	// (all of them by default), oldest first. Does not allocate when
+	// out.capacity() >= size(), so the filter can reserve the space before
+	// taking its lock and hold the lock only for the copy.
+	void copy_to(std::vector<float> &out, std::size_t newest = SIZE_MAX) const;
 
 private:
-	std::vector<float> samples;
-	std::size_t write_pos = 0;
-	std::size_t filled = 0;
+	// Sized in bytes, like every libobs deque; size() converts to samples.
+	deque queue;
+	std::size_t max_samples = 0;
 };

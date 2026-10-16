@@ -1,6 +1,7 @@
-# The parts of Hindsight that do not need OBS. Both the plugin (CMakeLists.txt)
-# and the unit tests (tests/CMakeLists.txt) build these, so a new OBS-free file
-# only needs adding here.
+# The parts of Hindsight that run without OBS (AudioRing uses only libobs's
+# header-only deque). Both the plugin (CMakeLists.txt) and the unit tests
+# (tests/CMakeLists.txt) build these, so a new file of this kind only needs
+# adding here.
 
 set(
   HINDSIGHT_CORE_SOURCES
