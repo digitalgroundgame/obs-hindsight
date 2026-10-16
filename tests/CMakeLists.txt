@@ -35,8 +35,6 @@ include(../src/hindsight-core.cmake)
 
 add_library(hindsight-core STATIC ${HINDSIGHT_CORE_SOURCES})
 target_include_directories(hindsight-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../src")
-find_package(Qt6 REQUIRED COMPONENTS Core)
-target_link_libraries(hindsight-core PUBLIC Qt6::Core)
 if(WIN32)
   target_link_libraries(hindsight-core PUBLIC crypt32)
 endif()

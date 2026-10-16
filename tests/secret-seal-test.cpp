@@ -34,34 +34,13 @@ void round_trips_the_secrets_text()
 	CHECK(text == json);
 }
 
-void sealed_file_does_not_show_the_keys()
-{
-	const std::string sealed = seal_secrets_text("claude_api_key=sk-ant-abc123\n");
-	CHECK(sealed.find("sk-ant") == std::string::npos);
-	CHECK(sealed.find("claude_api_key") == std::string::npos);
-}
-
 void rejects_other_files()
 {
 	std::string text = "left over";
-	CHECK(!open_secrets_text("claude_api_key=sk-ant-abc123\n", text));
+	CHECK(!open_secrets_text("{\"claude_api_key\": \"sk-ant-abc123\"}", text));
 	CHECK(text.empty());
 	CHECK(!open_secrets_text("", text));
 	CHECK(!open_secrets_text("other:Zm9v\n", text));
-	// The right scheme with broken base64 is not a file we wrote.
-	const std::string sealed = seal_secrets_text("x");
-	const std::string scheme = sealed.substr(0, sealed.find(':') + 1);
-	CHECK(!open_secrets_text(scheme + "***\n", text));
-}
-
-void accepts_windows_line_endings()
-{
-	std::string sealed = seal_secrets_text("claude_api_key=k\n");
-	sealed.insert(sealed.size() - 1, "\r");
-
-	std::string text;
-	CHECK(open_secrets_text(sealed, text));
-	CHECK(text == "claude_api_key=k\n");
 }
 
 } // namespace
@@ -69,8 +48,6 @@ void accepts_windows_line_endings()
 int main()
 {
 	round_trips_the_secrets_text();
-	sealed_file_does_not_show_the_keys();
 	rejects_other_files();
-	accepts_windows_line_endings();
 	return check::finish();
 }

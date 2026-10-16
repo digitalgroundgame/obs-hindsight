@@ -24,11 +24,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 //
 // On Windows the text is encrypted with DPAPI for the signed-in Windows user,
 // so a copy of the file (in a backup, or a zipped OBS folder) is useless on
-// another account or PC. Other platforms have no equivalent built in, so
-// there the text is only base64-encoded, which hides it from a casual glance
-// but is not encryption. The file is one line, "<scheme>:<base64>", so a
-// Windows file is never mistaken for a plain one. Free of OBS so the tests
-// can run it on its own.
+// another account or PC. The file is one line, "dpapi:<base64>". Other
+// platforms store the text as is after "plain:" until #15 adds their
+// keychains; the scheme keeps the two from being mistaken for each other.
+// Free of OBS so the tests can run it on its own.
 std::string seal_secrets_text(const std::string &text);
 
 // Returns false, leaving text empty, if the contents are not a file

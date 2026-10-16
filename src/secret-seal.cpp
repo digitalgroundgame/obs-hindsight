@@ -18,16 +18,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "secret-seal.hpp"
 
-#include <QByteArray>
-
 #ifdef _WIN32
 #include <windows.h>
 #include <wincrypt.h>
 #endif
 
+#ifdef _WIN32
+
 namespace {
 
-#ifdef _WIN32
 constexpr const char *kScheme = "dpapi:";
 
 bool apply_seal(const std::string &in, std::string &out, bool encrypt)
@@ -45,30 +44,34 @@ bool apply_seal(const std::string &in, std::string &out, bool encrypt)
 	LocalFree(output.pbData);
 	return true;
 }
-#else
-constexpr const char *kScheme = "plain:";
 
-bool apply_seal(const std::string &in, std::string &out, bool)
+// Base64 from crypt32, the same Windows library as DPAPI.
+bool to_base64(const std::string &bytes, std::string &text)
 {
-	out = in;
+	const auto *data = reinterpret_cast<const BYTE *>(bytes.data());
+	const auto size = static_cast<DWORD>(bytes.size());
+	const DWORD flags = CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF;
+	DWORD length = 0;
+	if (!CryptBinaryToStringA(data, size, flags, nullptr, &length))
+		return false;
+	text.resize(length);
+	if (!CryptBinaryToStringA(data, size, flags, text.data(), &length))
+		return false;
+	text.resize(length); // drops the terminating null
 	return true;
-}
-#endif
-
-// Base64 comes from Qt, which the plugin already links for its settings window.
-std::string to_base64(const std::string &bytes)
-{
-	return QByteArray::fromRawData(bytes.data(), static_cast<qsizetype>(bytes.size())).toBase64().toStdString();
 }
 
 bool from_base64(const std::string &text, std::string &bytes)
 {
-	const auto decoded = QByteArray::fromBase64Encoding(
-		QByteArray::fromRawData(text.data(), static_cast<qsizetype>(text.size())),
-		QByteArray::AbortOnBase64DecodingErrors);
-	if (!decoded)
+	const auto size = static_cast<DWORD>(text.size());
+	DWORD length = 0;
+	if (!CryptStringToBinaryA(text.data(), size, CRYPT_STRING_BASE64, nullptr, &length, nullptr, nullptr))
 		return false;
-	bytes = decoded.decoded.toStdString();
+	bytes.resize(length);
+	if (!CryptStringToBinaryA(text.data(), size, CRYPT_STRING_BASE64, reinterpret_cast<BYTE *>(bytes.data()),
+				  &length, nullptr, nullptr))
+		return false;
+	bytes.resize(length);
 	return true;
 }
 
@@ -77,9 +80,10 @@ bool from_base64(const std::string &text, std::string &bytes)
 std::string seal_secrets_text(const std::string &text)
 {
 	std::string sealed;
-	if (!apply_seal(text, sealed, true))
+	std::string encoded;
+	if (!apply_seal(text, sealed, true) || !to_base64(sealed, encoded))
 		return "";
-	return kScheme + to_base64(sealed) + "\n";
+	return kScheme + encoded + "\n";
 }
 
 bool open_secrets_text(const std::string &contents, std::string &text)
@@ -94,5 +98,32 @@ bool open_secrets_text(const std::string &contents, std::string &text)
 		encoded.pop_back();
 
 	std::string sealed;
-	return from_base64(encoded, sealed) && apply_seal(sealed, text, false);
+	return !encoded.empty() && from_base64(encoded, sealed) && apply_seal(sealed, text, false);
 }
+
+#else
+
+namespace {
+
+constexpr const char *kScheme = "plain:";
+
+} // namespace
+
+// No encryption outside Windows yet (#15); secret-store.cpp makes the file
+// readable by its owner only.
+std::string seal_secrets_text(const std::string &text)
+{
+	return kScheme + text;
+}
+
+bool open_secrets_text(const std::string &contents, std::string &text)
+{
+	text.clear();
+	const std::string scheme = kScheme;
+	if (contents.compare(0, scheme.size(), scheme) != 0)
+		return false;
+	text = contents.substr(scheme.size());
+	return true;
+}
+
+#endif
