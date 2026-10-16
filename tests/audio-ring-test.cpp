@@ -123,6 +123,17 @@ void copy_to_reuses_reserved_space()
 	CHECK(out == (std::vector<float>{2.0f, 3.0f, 4.0f, 5.0f}));
 }
 
+void copy_to_shrinks_a_longer_out()
+{
+	AudioRing ring;
+	ring.reset(2);
+	push_mono(ring, {1.0f, 2.0f, 3.0f});
+
+	std::vector<float> out = {9.0f, 9.0f, 9.0f, 9.0f, 9.0f};
+	ring.copy_to(out);
+	CHECK(out == (std::vector<float>{2.0f, 3.0f}));
+}
+
 void copy_to_empties_out_for_an_unsized_ring()
 {
 	AudioRing ring;
@@ -143,6 +154,7 @@ int main()
 	reset_clears_buffered_audio();
 	copy_to_matches_snapshot_after_wrapping();
 	copy_to_reuses_reserved_space();
+	copy_to_shrinks_a_longer_out();
 	copy_to_empties_out_for_an_unsized_ring();
 	return check::finish();
 }

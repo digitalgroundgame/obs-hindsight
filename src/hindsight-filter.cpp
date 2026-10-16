@@ -64,18 +64,21 @@ struct HindsightFilter {
 // taking it and the lock is held only for the copy.
 std::vector<float> snapshot(HindsightFilter *filter)
 {
-	size_t capacity = 0;
-	{
-		std::lock_guard<std::mutex> guard(filter->lock);
-		capacity = filter->ring.capacity();
-	}
-
 	std::vector<float> out;
-	out.reserve(capacity);
-
-	std::lock_guard<std::mutex> guard(filter->lock);
-	filter->ring.copy_to(out);
-	return out;
+	for (;;) {
+		size_t capacity = 0;
+		{
+			std::lock_guard<std::mutex> guard(filter->lock);
+			// Retry if the ring grew since we reserved (the slider moved
+			// between the two locks), so the copy never allocates here.
+			if (out.capacity() >= filter->ring.capacity()) {
+				filter->ring.copy_to(out);
+				return out;
+			}
+			capacity = filter->ring.capacity();
+		}
+		out.reserve(capacity);
+	}
 }
 
 bool write_wav(const std::string &path, const std::vector<float> &samples, uint32_t sample_rate)
@@ -189,8 +192,10 @@ void update(void *data, obs_data_t *settings)
 	if (resize)
 		resized.reset(size);
 
+	std::string discord_user_id = obs_data_get_string(settings, "discord_user_id");
+
 	std::lock_guard<std::mutex> guard(filter->lock);
-	filter->discord_user_id = obs_data_get_string(settings, "discord_user_id");
+	filter->discord_user_id = std::move(discord_user_id);
 
 	if (resize && filter->ring.capacity() != size)
 		std::swap(filter->ring, resized);
