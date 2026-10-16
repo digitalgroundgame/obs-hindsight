@@ -96,18 +96,21 @@ void answer(const Clip &clip)
 	const ClaudeAnswer reply = ask_claude(transcript.text, api_key, stopping);
 	switch (reply.outcome) {
 	case ClaudeAnswer::Outcome::answered:
-		obs_log(LOG_INFO, "question: %s", reply.question.c_str());
+		obs_log(LOG_INFO, "question: %s",
+			reply.question.empty() ? "(Claude answered without restating it)" : reply.question.c_str());
 		obs_log(LOG_INFO,
-			"answer (Claude took %.1f s, %.1f s in all; cost $%.5f for %lld in, %lld out tokens): %s",
+			"answer (Claude took %.1f s, %.1f s in all; cost $%.5f for %lld in, %lld out tokens, %lld web searches): %s",
 			seconds_since(asked), seconds_since(start),
-			claude_cost_dollars(reply.input_tokens, reply.output_tokens), reply.input_tokens,
-			reply.output_tokens, reply.answer.c_str());
+			claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches),
+			reply.input_tokens, reply.output_tokens, reply.web_searches, reply.answer.c_str());
 		break;
 	case ClaudeAnswer::Outcome::no_question:
 		obs_log(LOG_INFO,
 			"Claude found no clear question in that clip (%.1f s, cost $%.5f), so nothing to send",
-			seconds_since(asked), claude_cost_dollars(reply.input_tokens, reply.output_tokens));
+			seconds_since(asked),
+			claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches));
 		break;
+	case ClaudeAnswer::Outcome::paused: // ask_claude resumes these or turns them into failures
 	case ClaudeAnswer::Outcome::failed:
 		if (reply.error_type == "authentication_error")
 			obs_log(LOG_WARNING,
@@ -115,9 +118,19 @@ void answer(const Clip &clip)
 		else if (reply.error_type == kWorkspaceKeyError)
 			obs_log(LOG_WARNING,
 				"answering stopped: this Claude API key isn't tied to a workspace. In the Claude Console, create a key with a workspace selected and enter it in Tools > Hindsight settings");
+		else if (reply.error_type == kWebSearchDisabledError)
+			obs_log(LOG_WARNING,
+				"answering stopped: web search is turned off for your Claude organization. An admin can turn it on in the Claude Console under Settings > Capabilities");
 		else if (reply.error_type != "cancelled")
 			obs_log(LOG_WARNING, "answering stopped: the Claude request failed (%s) %s",
 				reply.error_type.c_str(), reply.error_message.c_str());
+		// A request that failed after Claude started (say, cut off after
+		// searching) was still billed.
+		if (reply.input_tokens > 0 || reply.output_tokens > 0 || reply.web_searches > 0)
+			obs_log(LOG_INFO,
+				"that request still cost $%.5f for %lld in, %lld out tokens, %lld web searches",
+				claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches),
+				reply.input_tokens, reply.output_tokens, reply.web_searches);
 		break;
 	}
 }
