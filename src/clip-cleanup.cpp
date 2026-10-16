@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "clip-cleanup.hpp"
 
 #include <algorithm>
+#include <exception>
 #include <filesystem>
 #include <system_error>
 #include <utility>
@@ -34,7 +35,9 @@ bool is_saved_clip_name(const std::string &file_name)
 	       file_name.compare(file_name.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
-size_t delete_old_clips(const std::string &folder, size_t keep)
+namespace {
+
+size_t delete_old_clips_or_throw(const std::string &folder, size_t keep)
 {
 	std::error_code error;
 	// u8path reads the UTF-8 folder correctly on Windows too.
@@ -42,12 +45,16 @@ size_t delete_old_clips(const std::string &folder, size_t keep)
 	if (error)
 		return 0;
 
+	// Stepped with increment(error), not a range-for, whose ++ throws if
+	// the folder changes mid-scan; this runs on threads that must not throw.
 	std::vector<std::pair<fs::file_time_type, fs::path>> clips;
-	for (const fs::directory_entry &entry : entries) {
-		if (!entry.is_regular_file(error) || !is_saved_clip_name(entry.path().filename().u8string()))
+	for (; !error && entries != fs::directory_iterator(); entries.increment(error)) {
+		const fs::directory_entry &entry = *entries;
+		std::error_code entry_error;
+		if (!entry.is_regular_file(entry_error) || !is_saved_clip_name(entry.path().filename().u8string()))
 			continue;
-		const fs::file_time_type written = entry.last_write_time(error);
-		if (!error)
+		const fs::file_time_type written = entry.last_write_time(entry_error);
+		if (!entry_error)
 			clips.emplace_back(written, entry.path());
 	}
 	if (clips.size() <= keep)
@@ -63,4 +70,17 @@ size_t delete_old_clips(const std::string &folder, size_t keep)
 			deleted++;
 	}
 	return deleted;
+}
+
+} // namespace
+
+size_t delete_old_clips(const std::string &folder, size_t keep)
+{
+	// Paths that can't be converted (or running out of memory) still throw;
+	// cleanup is never worth crashing OBS over.
+	try {
+		return delete_old_clips_or_throw(folder, keep);
+	} catch (const std::exception &) {
+		return 0;
+	}
 }
