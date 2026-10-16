@@ -1,6 +1,6 @@
 /*
 Hindsight
-Copyright (C) 2026 DGG AC Dev Team
+Copyright (C) 2026 Digital Ground Game
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <util/deque.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -51,8 +52,12 @@ public:
 	std::size_t size() const { return queue.size / sizeof(float); }
 
 	// Mixes `frames` frames of planar audio (one array per channel, as OBS
-	// hands it over) down to mono and appends them. A null plane counts as
-	// silence.
+	// hands it over) down to mono and appends them. Only the channels that
+	// have carried sound since reset() are averaged, so a mic on one or two
+	// channels of a 5.1 layout keeps its level, and the level stays steady
+	// when a channel goes quiet for a chunk. A null or all-zero plane
+	// counts as silent; until any plane carries sound, silence is appended.
+	// Channels past the eighth (OBS's maximum) are ignored.
 	void push_planar(const float *const *planes, std::size_t channels, std::size_t frames);
 
 	// Returns the buffered audio, oldest sample first.
@@ -73,4 +78,9 @@ private:
 	// Sized in bytes, like every libobs deque; size() converts to samples.
 	deque queue;
 	std::size_t max_samples = 0;
+
+	// OBS's MAX_AUDIO_CHANNELS.
+	static constexpr std::size_t kMaxChannels = 8;
+	// Which channels have carried sound since reset().
+	std::array<bool, kMaxChannels> heard{};
 };
