@@ -162,8 +162,12 @@ whisper_context *load_model(const std::string &path)
 	params.use_gpu = false;
 	const uint64_t start = os_gettime_ns();
 	whisper_context *context = whisper_init_from_file_with_params(path.c_str(), params);
-	if (context)
+	if (context) {
 		obs_log(LOG_INFO, "speech model loaded in %.1f s", static_cast<double>(os_gettime_ns() - start) / 1e9);
+		// Which CPU features this build of whisper.cpp uses (AVX2, FMA and so
+		// on), to tell a slow CPU from a slow build.
+		obs_log(LOG_INFO, "whisper system info: %s", whisper_print_system_info());
+	}
 	return context;
 }
 
