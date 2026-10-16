@@ -36,7 +36,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // Our own site redirects this to the newest release on GitHub, so the link
 // can move without a plugin update. Update now still reads GitHub's API
 // directly, since that is where the installer's SHA-256 comes from.
-const char *const kHindsightReleasesPage = "https://stream-widgets.digitalgroundgame.org/hindsight/update";
+const char *const kHindsightReleasesPage = "https://connect.digitalgroundgame.org/hindsight/update";
 
 namespace {
 
