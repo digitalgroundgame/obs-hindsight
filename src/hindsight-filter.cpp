@@ -67,22 +67,24 @@ struct HindsightFilter {
 // copy.
 std::vector<float> snapshot(HindsightFilter *filter)
 {
-	size_t capacity = 0;
-	{
-		std::lock_guard<std::mutex> guard(filter->lock);
-		capacity = filter->ring.capacity();
-	}
-
 	std::vector<float> out;
-	out.reserve(capacity);
-
 	uint64_t last_push_ns = 0;
 	size_t window = 0;
-	{
-		std::lock_guard<std::mutex> guard(filter->lock);
-		filter->ring.copy_to(out);
-		last_push_ns = filter->last_push_ns;
-		window = filter->ring.capacity();
+	for (;;) {
+		size_t capacity = 0;
+		{
+			std::lock_guard<std::mutex> guard(filter->lock);
+			// Retry if the ring grew since we reserved (the slider moved
+			// between the two locks), so the copy never allocates here.
+			if (out.capacity() >= filter->ring.capacity()) {
+				filter->ring.copy_to(out);
+				last_push_ns = filter->last_push_ns;
+				window = filter->ring.capacity();
+				break;
+			}
+			capacity = filter->ring.capacity();
+		}
+		out.reserve(capacity);
 	}
 
 	// If the mic has been quiet in OBS (its scene not showing), drop what is
@@ -203,8 +205,10 @@ void update(void *data, obs_data_t *settings)
 	if (resize)
 		resized.reset(size);
 
+	std::string discord_user_id = obs_data_get_string(settings, "discord_user_id");
+
 	std::lock_guard<std::mutex> guard(filter->lock);
-	filter->discord_user_id = obs_data_get_string(settings, "discord_user_id");
+	filter->discord_user_id = std::move(discord_user_id);
 
 	if (resize && filter->ring.capacity() != size)
 		std::swap(filter->ring, resized);
