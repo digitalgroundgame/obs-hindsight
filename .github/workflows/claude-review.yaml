@@ -42,7 +42,7 @@ jobs:
             Read .github/claude-review.md first and follow it.
 
             Use `mcp__github_inline_comment__create_inline_comment` (with `confirmed: true`) for issues tied to
-            specific lines. Put your overall summary, or a note that it looks good, in the progress comment;
-            do not post a separate summary comment.
+            specific lines. Put your overall summary, or a note that it looks good, in the progress comment.
+            Use `gh pr comment` only for feedback that fits neither, not to repeat the summary.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
