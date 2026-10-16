@@ -17,13 +17,16 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "hindsight-filter.hpp"
+#include "answer-pipeline.hpp"
 #include "audio-freshness.hpp"
 #include "audio-ring.hpp"
 #include "clip-file.hpp"
 #include "secret-store.hpp"
 #include "update-check.hpp"
+#include "update-install.hpp"
 #include "wav.hpp"
 
+#include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <plugin-support.h>
 #include <util/platform.h>
@@ -165,8 +168,8 @@ void write_clip(void *param)
 	delete job;
 }
 
-// What the hotkey will eventually do end to end. For the spike it saves the
-// buffered audio so we can listen to exactly what would be transcribed.
+// What the hotkey does: hands the clip to the answer pipeline, and saves it
+// as a WAV so we can listen to exactly what was transcribed.
 void capture(HindsightFilter *filter)
 {
 	// Each clip holds up to 30 s of audio (about 6 MB), so don't let them
@@ -184,6 +187,8 @@ void capture(HindsightFilter *filter)
 			filter->window_seconds.load());
 		return;
 	}
+
+	answer_pipeline_ask(samples, filter->sample_rate);
 
 	// Named for when the hotkey was pressed, the way OBS names recordings.
 	char *name = os_generate_formatted_filename(nullptr, false, "hindsight-%CCYY%MM%DD-%hh%mm%ss");
@@ -345,23 +350,79 @@ bool on_download_update_clicked(obs_properties_t *, obs_property_t *, void *)
 	return false; // OBS opens the button's URL itself
 }
 
+// The installer closes OBS, so never start it while OBS is live.
+std::atomic<bool> update_waits_for_stream_end{false};
+
+bool on_update_now_clicked(obs_properties_t *, obs_property_t *, void *data)
+{
+	auto *filter = static_cast<HindsightFilter *>(data);
+	update_waits_for_stream_end = obs_frontend_streaming_active() || obs_frontend_recording_active();
+	if (!update_waits_for_stream_end)
+		update_install_start(filter->source);
+	return true; // redraw the settings to show the new state
+}
+
+std::string with_version(const char *text_key, const std::string &version)
+{
+	std::string text = obs_module_text(text_key);
+	const std::string placeholder = "{version}";
+	const size_t at = text.find(placeholder);
+	if (at != std::string::npos)
+		text.replace(at, placeholder.size(), version);
+	return text;
+}
+
+// The notice and Update now button for the current UpdateInstallState.
+// Returns whether to also offer the release page in the browser.
+bool add_update_now(obs_properties_t *props, HindsightFilter *filter, const std::string &version)
+{
+	const UpdateInstallState state = update_install_state();
+	const char *text_key = "Hindsight.UpdateReady";
+	bool offer_page = false;
+	if (update_waits_for_stream_end && state == UpdateInstallState::idle) {
+		text_key = "Hindsight.UpdateStopStreamFirst";
+	} else if (state == UpdateInstallState::downloading) {
+		text_key = "Hindsight.UpdateDownloading";
+	} else if (state == UpdateInstallState::started) {
+		text_key = "Hindsight.UpdateStarted";
+	} else if (state == UpdateInstallState::failed) {
+		text_key = "Hindsight.UpdateFailed";
+		offer_page = true;
+	}
+
+	obs_property_t *notice =
+		obs_properties_add_text(props, "update_notice", with_version(text_key, version).c_str(), OBS_TEXT_INFO);
+	obs_property_text_set_info_type(notice, state == UpdateInstallState::failed ? OBS_TEXT_INFO_ERROR
+										    : OBS_TEXT_INFO_WARNING);
+
+	obs_property_t *button = obs_properties_add_button2(props, "update_now", obs_module_text("Hindsight.UpdateNow"),
+							    on_update_now_clicked, filter);
+	obs_property_set_enabled(button, state != UpdateInstallState::downloading);
+	return offer_page;
+}
+
 // Shown at the top of the filter's settings when update-check.cpp found a
-// newer release. OBS_BUTTON_URL buttons open their URL in the browser:
+// newer release. On Windows, Update now downloads and starts the installer
+// (update-install.cpp); elsewhere, or if that fails, a button opens the
+// release page. OBS_BUTTON_URL buttons open their URL in the browser:
 // https://github.com/obsproject/obs-studio/blob/31.1.1/libobs/obs-properties.h
-void add_update_notice(obs_properties_t *props)
+void add_update_notice(obs_properties_t *props, HindsightFilter *filter)
 {
 	const std::string version = update_check_newer_version();
 	if (version.empty())
 		return;
 
-	std::string text = obs_module_text("Hindsight.UpdateAvailable");
-	const std::string placeholder = "{version}";
-	const size_t at = text.find(placeholder);
-	if (at != std::string::npos)
-		text.replace(at, placeholder.size(), version);
-
-	obs_property_t *notice = obs_properties_add_text(props, "update_notice", text.c_str(), OBS_TEXT_INFO);
-	obs_property_text_set_info_type(notice, OBS_TEXT_INFO_WARNING);
+	bool offer_page = true;
+	if (update_install_supported() && filter) {
+		offer_page = add_update_now(props, filter, version);
+	} else {
+		obs_property_t *notice = obs_properties_add_text(
+			props, "update_notice", with_version("Hindsight.UpdateAvailable", version).c_str(),
+			OBS_TEXT_INFO);
+		obs_property_text_set_info_type(notice, OBS_TEXT_INFO_WARNING);
+	}
+	if (!offer_page)
+		return;
 
 	obs_property_t *button = obs_properties_add_button2(props, "download_update",
 							    obs_module_text("Hindsight.DownloadUpdate"),
@@ -374,7 +435,7 @@ void add_update_notice(obs_properties_t *props)
 obs_properties_t *get_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
-	add_update_notice(props);
+	add_update_notice(props, static_cast<HindsightFilter *>(data));
 
 	obs_property_t *note =
 		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
