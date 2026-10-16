@@ -42,8 +42,9 @@ foreach(_header IN ITEMS base.h bmem.h c99defs.h deque.h)
   set(_path "${_libobs_headers}/util/${_header}")
   if(NOT EXISTS "${_path}")
     file(
-      DOWNLOAD "https://raw.githubusercontent.com/obsproject/obs-studio/${_obs_version}/libobs/util/${_header}"
-      "${_path}"
+      DOWNLOAD
+        "https://raw.githubusercontent.com/obsproject/obs-studio/${_obs_version}/libobs/util/${_header}"
+        "${_path}"
       TLS_VERIFY ON
       STATUS _status
     )
