@@ -17,7 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "check.hpp"
-#include "file-sha1.hpp"
+#include "file-hash.hpp"
 
 #include <cstdio>
 #include <string>
@@ -42,10 +42,10 @@ std::string write_temp(const char *name, const std::string &contents)
 
 void hashes_files()
 {
-	const std::string abc = write_temp("sha1-abc.tmp", "abc");
-	const std::string empty = write_temp("sha1-empty.tmp", "");
+	const std::string abc = write_temp("hash-abc.tmp", "abc");
+	const std::string empty = write_temp("hash-empty.tmp", "");
 	// A file bigger than one read, to cover the loop.
-	const std::string big = write_temp("sha1-big.tmp", std::string(3 * 1024 * 1024 + 7, 'a'));
+	const std::string big = write_temp("hash-big.tmp", std::string(3 * 1024 * 1024 + 7, 'a'));
 
 #ifdef _WIN32
 	// Test vectors from FIPS 180.
@@ -53,9 +53,14 @@ void hashes_files()
 	CHECK(file_sha1(empty) == "da39a3ee5e6b4b0d3255bfef95601890afd80709");
 	CHECK(file_sha1(big).has_value());
 	CHECK(!file_sha1("no-such-file.tmp").has_value());
+	CHECK(file_sha256(abc) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+	CHECK(file_sha256(empty) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+	CHECK(file_sha256(big).has_value());
+	CHECK(!file_sha256("no-such-file.tmp").has_value());
 #else
 	// Not implemented here yet.
 	CHECK(!file_sha1(abc).has_value());
+	CHECK(!file_sha256(abc).has_value());
 #endif
 
 	std::remove(abc.c_str());

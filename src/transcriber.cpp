@@ -36,6 +36,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <algorithm>
 #include <mutex>
+#include <string_view>
 #include <thread>
 
 namespace {
@@ -93,8 +94,22 @@ bool cpu_supported()
 // whisper.cpp logs a lot; keep only its warnings and errors.
 void on_whisper_log(ggml_log_level level, const char *text, void *)
 {
-	if (level == GGML_LOG_LEVEL_WARN || level == GGML_LOG_LEVEL_ERROR)
+	if (level == GGML_LOG_LEVEL_WARN || level == GGML_LOG_LEVEL_ERROR) {
 		obs_log(LOG_WARNING, "whisper: %s", text);
+		return;
+	}
+	// whisper_print_timings's breakdown of each transcription (fallbacks,
+	// encode, decode), minus its load and total lines, which count from when
+	// the model loaded rather than this clip.
+	const std::string_view line = text ? text : "";
+	constexpr std::string_view timings = "whisper_print_timings:";
+	if (line.substr(0, timings.size()) == timings && line.find("load time") == std::string_view::npos &&
+	    line.find("total time") == std::string_view::npos) {
+		std::string_view detail = line.substr(timings.size());
+		while (!detail.empty() && (detail.front() == ' ' || detail.back() == '\n'))
+			detail = detail.front() == ' ' ? detail.substr(1) : detail.substr(0, detail.size() - 1);
+		obs_log(LOG_INFO, "whisper %.*s", static_cast<int>(detail.size()), detail.data());
+	}
 }
 
 // Set while the plugin unloads, so a transcription in progress stops instead
@@ -213,8 +228,21 @@ Transcript transcribe(const std::vector<float> &samples, uint32_t sample_rate, c
 	params.abort_callback = on_abort;
 	params.abort_callback_user_data = const_cast<std::atomic<bool> *>(&cancel);
 
+	// Voice detection cuts the clip down to its speech, so Whisper neither
+	// encodes nor second-guesses the silence and chatter around it.
+	const std::string vad_path = vad_model_path();
+	params.vad = !vad_path.empty();
+	params.vad_model_path = params.vad ? vad_path.c_str() : nullptr;
+
 	const uint64_t start = os_gettime_ns();
-	const int status = whisper_full(model, params, audio.data(), static_cast<int>(audio.size()));
+	whisper_reset_timings(model);
+	int status = whisper_full(model, params, audio.data(), static_cast<int>(audio.size()));
+	if (status != 0 && params.vad && !cancel.load() && !unloading.load()) {
+		obs_log(LOG_WARNING, "voice detection failed; transcribing the whole clip instead");
+		params.vad = false;
+		params.vad_model_path = nullptr;
+		status = whisper_full(model, params, audio.data(), static_cast<int>(audio.size()));
+	}
 	if (cancel.load() || unloading.load()) {
 		result.outcome = Transcript::Outcome::cancelled;
 		return result;
@@ -234,9 +262,21 @@ Transcript transcribe(const std::vector<float> &samples, uint32_t sample_rate, c
 	const size_t first = result.text.find_first_not_of(' ');
 	result.text.erase(0, first == std::string::npos ? result.text.size() : first);
 
-	obs_log(LOG_INFO, "transcribed %.0f s of audio in %.1f s",
-		static_cast<double>(audio.size()) / kWhisperSampleRate,
-		static_cast<double>(os_gettime_ns() - start) / 1e9);
+	// Where the time went, to tell what to speed up next.
+	double speech_seconds = static_cast<double>(audio.size()) / kWhisperSampleRate;
+	if (params.vad) {
+		speech_seconds = 0;
+		const int spans = result.text.empty() ? 0 : whisper_full_n_vad_segments(model);
+		for (int i = 0; i < spans; i++) // in centiseconds
+			speech_seconds += static_cast<double>(whisper_full_get_vad_segment_t1(model, i) -
+							      whisper_full_get_vad_segment_t0(model, i)) /
+					  100.0;
+	}
+	obs_log(LOG_INFO, "transcribed %.0f s of audio (%.1f s of it speech%s) in %.1f s on %d threads",
+		static_cast<double>(audio.size()) / kWhisperSampleRate, speech_seconds,
+		params.vad ? "" : ", no voice detection", static_cast<double>(os_gettime_ns() - start) / 1e9,
+		params.n_threads);
+	whisper_print_timings(model);
 	result.outcome = Transcript::Outcome::ok;
 	return result;
 #endif

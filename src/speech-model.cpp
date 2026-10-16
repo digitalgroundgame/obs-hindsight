@@ -17,7 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "speech-model.hpp"
-#include "file-sha1.hpp"
+#include "file-hash.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -34,29 +34,48 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace {
 
-constexpr const char *kModelFile = "models/ggml-base.en.bin";
-constexpr const char *kModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
-// The SHA-1 whisper.cpp lists for base.en (models/README.md at v1.9.5).
-constexpr const char *kModelSha1 = "137c40403d78fd54d454da0f9bd998f78703390c";
+// A file the transcriber needs, checked against the hash its publisher lists.
+struct ModelFile {
+	const char *file; // under the plugin's config folder
+	const char *url;
+	const char *sha1;   // either this...
+	const char *sha256; // ...or this
+	const char *what;   // for the log
+};
+
+// Whisper base.en, about 142 MB. The SHA-1 is the one whisper.cpp lists
+// (models/README.md at v1.9.5).
+constexpr ModelFile kSpeechModel = {"models/ggml-base.en.bin",
+				    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+				    "137c40403d78fd54d454da0f9bd998f78703390c", nullptr, "speech model (about 142 MB)"};
+
+// Silero voice activity detection, about 0.9 MB, so Whisper skips the silence
+// in a clip. The model whisper.cpp's README uses at v1.9.5; the SHA-256 is
+// the Git LFS object ID Hugging Face lists for the file.
+constexpr ModelFile kVadModel = {"models/ggml-silero-v6.2.0.bin",
+				 "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin",
+				 nullptr, "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
+				 "voice detection model (about 1 MB)"};
 
 std::thread worker;
 std::atomic<bool> stopping{false};
 
 std::mutex ready_lock;
-std::string ready_path; // guarded by ready_lock
+std::string ready_speech_path; // guarded by ready_lock
+std::string ready_vad_path;    // guarded by ready_lock
 
-std::string model_path()
+std::string config_path(const char *file)
 {
-	char *path = obs_module_config_path(kModelFile);
+	char *path = obs_module_config_path(file);
 	std::string result = path ? path : "";
 	bfree(path);
 	return result;
 }
 
-void set_ready(const std::string &path)
+void set_ready(const ModelFile &model, const std::string &path)
 {
 	std::lock_guard<std::mutex> guard(ready_lock);
-	ready_path = path;
+	(&model == &kVadModel ? ready_vad_path : ready_speech_path) = path;
 }
 
 size_t write_file(char *data, size_t size, size_t count, void *user)
@@ -71,25 +90,26 @@ int on_progress(void *, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
 
 // Whether the file at path is the model we expect. A captive portal's page,
 // a truncated file or a changed upstream file all fail this. Only Windows can
-// check the hash for now (see file-sha1.hpp); elsewhere the file is trusted.
-bool is_expected_model(const std::string &path)
+// check the hash for now (see file-hash.hpp); elsewhere the file is trusted.
+bool is_expected_model(const ModelFile &model, const std::string &path)
 {
-	const std::optional<std::string> sha1 = file_sha1(path);
+	const std::optional<std::string> hash = model.sha1 ? file_sha1(path) : file_sha256(path);
+	const char *expected = model.sha1 ? model.sha1 : model.sha256;
 #ifdef _WIN32
-	return sha1 && *sha1 == kModelSha1;
+	return hash && *hash == expected;
 #else
-	return !sha1 || *sha1 == kModelSha1;
+	return !hash || *hash == expected;
 #endif
 }
 
 // Downloads to a .part file and renames it only once complete, so a closed
 // OBS or a dropped connection never leaves a half model behind.
-bool download(const std::string &path)
+bool download(const ModelFile &model, const std::string &path)
 {
 	const std::string part = path + ".part";
 	FILE *file = os_fopen(part.c_str(), "wb");
 	if (!file) {
-		obs_log(LOG_WARNING, "could not create %s for the speech model", part.c_str());
+		obs_log(LOG_WARNING, "could not create %s for the %s", part.c_str(), model.what);
 		return false;
 	}
 
@@ -100,7 +120,7 @@ bool download(const std::string &path)
 		return false;
 	}
 	const std::string user_agent = std::string("obs-hindsight/") + PLUGIN_VERSION;
-	curl_easy_setopt(curl, CURLOPT_URL, kModelUrl);
+	curl_easy_setopt(curl, CURLOPT_URL, model.url);
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
 	// Hugging Face redirects to its download servers.
 	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -121,43 +141,59 @@ bool download(const std::string &path)
 
 	if (result != CURLE_OK || !closed) {
 		if (!stopping.load())
-			obs_log(LOG_WARNING, "could not download the speech model: %s",
+			obs_log(LOG_WARNING, "could not download the %s: %s", model.what,
 				result != CURLE_OK ? curl_easy_strerror(result) : "could not write the file");
 		os_unlink(part.c_str());
 		return false;
 	}
-	if (!is_expected_model(part)) {
-		obs_log(LOG_WARNING, "the downloaded speech model is not the expected file; deleted it");
+	if (!is_expected_model(model, part)) {
+		obs_log(LOG_WARNING, "the downloaded %s is not the expected file; deleted it", model.what);
 		os_unlink(part.c_str());
 		return false;
 	}
 	if (os_rename(part.c_str(), path.c_str()) != 0) {
-		obs_log(LOG_WARNING, "could not save the speech model to %s", path.c_str());
+		obs_log(LOG_WARNING, "could not save the %s to %s", model.what, path.c_str());
 		os_unlink(part.c_str());
 		return false;
 	}
 	return true;
 }
 
-void run_download(const std::string &path)
+// Makes sure one model is on disk and intact, downloading it if not. Returns
+// whether it is ready.
+bool fetch(const ModelFile &model)
 {
+	const std::string path = config_path(model.file);
+	if (path.empty())
+		return false;
+
 	// A model from an earlier start is checked again, off the thread that
 	// loads OBS, in case it was damaged since.
 	if (os_file_exists(path.c_str())) {
-		if (is_expected_model(path)) {
-			set_ready(path);
-			return;
+		if (is_expected_model(model, path)) {
+			set_ready(model, path);
+			return true;
 		}
-		obs_log(LOG_WARNING, "the saved speech model is damaged; downloading it again");
+		obs_log(LOG_WARNING, "the saved %s is damaged; downloading it again", model.what);
 		os_unlink(path.c_str());
 	}
 
-	obs_log(LOG_INFO, "downloading the speech model (about 142 MB) to %s", path.c_str());
+	obs_log(LOG_INFO, "downloading the %s to %s", model.what, path.c_str());
 	const uint64_t start = os_gettime_ns();
-	if (!download(path))
-		return;
-	obs_log(LOG_INFO, "speech model downloaded in %.0f s", static_cast<double>(os_gettime_ns() - start) / 1e9);
-	set_ready(path);
+	if (!download(model, path))
+		return false;
+	obs_log(LOG_INFO, "%s downloaded in %.0f s", model.what, static_cast<double>(os_gettime_ns() - start) / 1e9);
+	set_ready(model, path);
+	return true;
+}
+
+void run_downloads()
+{
+	// The speech model first: transcription works without voice detection,
+	// only slower.
+	fetch(kSpeechModel);
+	if (!stopping.load())
+		fetch(kVadModel);
 }
 
 } // namespace
@@ -166,17 +202,15 @@ void speech_model_start()
 {
 	if (worker.joinable())
 		return;
-	const std::string path = model_path();
-	if (path.empty())
-		return;
 
 	char *dir = obs_module_config_path("models");
-	if (dir)
-		os_mkdirs(dir);
+	if (!dir)
+		return;
+	os_mkdirs(dir);
 	bfree(dir);
 
 	stopping = false;
-	worker = std::thread(run_download, path);
+	worker = std::thread(run_downloads);
 }
 
 void speech_model_stop()
@@ -189,5 +223,11 @@ void speech_model_stop()
 std::string speech_model_path()
 {
 	std::lock_guard<std::mutex> guard(ready_lock);
-	return ready_path;
+	return ready_speech_path;
+}
+
+std::string vad_model_path()
+{
+	std::lock_guard<std::mutex> guard(ready_lock);
+	return ready_vad_path;
 }

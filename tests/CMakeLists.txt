@@ -90,7 +90,7 @@ set(
   claude-answer-test
   clip-cleanup-test
   clip-file-test
-  file-sha1-test
+  file-hash-test
   private-file-test
   secret-seal-test
   secrets-test
