@@ -142,6 +142,20 @@ void copy_to_empties_out_for_an_unsized_ring()
 	CHECK(out.empty());
 }
 
+void clear_keeps_capacity()
+{
+	AudioRing ring;
+	ring.reset(4);
+	push_mono(ring, {1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
+	ring.clear();
+	CHECK(ring.capacity() == 4);
+	CHECK(ring.size() == 0);
+	CHECK(ring.snapshot().empty());
+
+	push_mono(ring, {6.0f, 7.0f});
+	CHECK(ring.snapshot() == (std::vector<float>{6.0f, 7.0f}));
+}
+
 } // namespace
 
 int main()
@@ -156,5 +170,6 @@ int main()
 	copy_to_reuses_reserved_space();
 	copy_to_shrinks_a_longer_out();
 	copy_to_empties_out_for_an_unsized_ring();
+	clear_keeps_capacity();
 	return check::finish();
 }

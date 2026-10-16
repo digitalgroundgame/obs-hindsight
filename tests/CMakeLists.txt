@@ -43,6 +43,7 @@ enable_testing()
 
 set(
   HINDSIGHT_TESTS
+  audio-freshness-test
   audio-ring-test
   secret-seal-test
   secrets-test
