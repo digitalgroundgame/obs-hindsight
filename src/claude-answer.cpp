@@ -55,6 +55,14 @@ std::string string_at(const json &object, const char *key)
 	return it->get<std::string>();
 }
 
+long long count_at(const json &object, const char *key)
+{
+	const auto it = object.find(key);
+	if (it == object.end() || !it->is_number_integer())
+		return 0;
+	return it->get<long long>();
+}
+
 ClaudeAnswer failure(std::string type, std::string message = {})
 {
 	ClaudeAnswer result;
@@ -64,6 +72,13 @@ ClaudeAnswer failure(std::string type, std::string message = {})
 }
 
 } // namespace
+
+double claude_cost_dollars(long long input_tokens, long long output_tokens)
+{
+	return (static_cast<double>(input_tokens) * kClaudeInputDollarsPerMillion +
+		static_cast<double>(output_tokens) * kClaudeOutputDollarsPerMillion) /
+	       1e6;
+}
 
 std::string shorten_text(const std::string &text, size_t max_characters)
 {
@@ -158,6 +173,11 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 			return failure("bad_response");
 
 		ClaudeAnswer result;
+		const auto usage = reply.find("usage");
+		if (usage != reply.end() && usage->is_object()) {
+			result.input_tokens = count_at(*usage, "input_tokens");
+			result.output_tokens = count_at(*usage, "output_tokens");
+		}
 		result.question = trimmed(string_at(*input, "question"));
 		result.answer = shorten_text(trimmed(string_at(*input, "answer")), kMaxAnswerCharacters);
 		// A question with no answer (or the reverse) has nothing to send.

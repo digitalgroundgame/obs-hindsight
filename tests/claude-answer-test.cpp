@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <nlohmann/json.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <exception>
 #include <string>
@@ -71,6 +72,24 @@ void reads_the_question_and_answer()
 	CHECK(answer.outcome == ClaudeAnswer::Outcome::answered);
 	CHECK(answer.question == "What year?");
 	CHECK(answer.answer == "1989, on November 9.");
+}
+
+void reads_the_usage_and_cost()
+{
+	const ClaudeAnswer answer = parse_claude_response(
+		200,
+		R"({"content":[{"type":"tool_use","name":"send_answer","input":{"question":"Q?","answer":"A."}}],"usage":{"input_tokens":812,"output_tokens":95}})");
+	CHECK(answer.input_tokens == 812);
+	CHECK(answer.output_tokens == 95);
+	// 812 at $0.10 and 95 at $0.50 per million tokens.
+	CHECK(std::fabs(claude_cost_dollars(812, 95) - 0.0001287) < 1e-12);
+	CHECK(claude_cost_dollars(0, 0) == 0.0);
+
+	// No usage in the reply reads as zero rather than failing.
+	const ClaudeAnswer no_usage = parse_claude_response(200, tool_reply("Q?", "A."));
+	CHECK(no_usage.outcome == ClaudeAnswer::Outcome::answered);
+	CHECK(no_usage.input_tokens == 0);
+	CHECK(no_usage.output_tokens == 0);
 }
 
 void empty_fields_mean_no_question()
@@ -152,6 +171,7 @@ int main()
 		request_forces_the_tool_and_carries_the_transcript();
 		request_survives_bad_utf8();
 		reads_the_question_and_answer();
+		reads_the_usage_and_cost();
 		empty_fields_mean_no_question();
 		reads_api_errors();
 		rejects_replies_it_cannot_read();
