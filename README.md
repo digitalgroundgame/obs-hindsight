@@ -79,8 +79,8 @@ mic on your PC, asks Claude for the question and answer, and writes them to the
 OBS log. It does not message Discord yet.
 
 1. [Install the plugin](#installing) and start OBS. Wait a minute or two for
-   the speech model to download; the log says `speech model downloaded` when
-   it's done.
+   the speech models to download; the log says `voice detection model (about
+   1 MB) downloaded` when they're done.
 2. Under **Tools > Hindsight settings**, enter your Claude API key and click
    **Save**. Create the key on the
    [API keys](https://platform.claude.com/settings/keys) page of the Claude

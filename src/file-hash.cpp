@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
-#include "file-sha1.hpp"
+#include "file-hash.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -43,9 +43,9 @@ std::wstring widen(const std::string &utf8)
 	return wide;
 }
 
-} // namespace
-
-std::optional<std::string> file_sha1(const std::string &utf8_path)
+// Hashes the file with algorithm, a ready-made BCrypt handle (Windows 10+)
+// whose digest is digest_size bytes.
+std::optional<std::string> file_hash(const std::string &utf8_path, BCRYPT_ALG_HANDLE algorithm, size_t digest_size)
 {
 	// Windows' fopen reads paths in the ANSI code page, so open by the UTF-16
 	// path. _wfopen_s, not _wfopen, which MSVC warns is unsafe.
@@ -53,9 +53,8 @@ std::optional<std::string> file_sha1(const std::string &utf8_path)
 	if (_wfopen_s(&file, widen(utf8_path).c_str(), L"rb") != 0 || !file)
 		return std::nullopt;
 
-	// BCRYPT_SHA1_ALG_HANDLE is a ready-made algorithm handle (Windows 10+).
 	BCRYPT_HASH_HANDLE hash = nullptr;
-	if (!BCRYPT_SUCCESS(BCryptCreateHash(BCRYPT_SHA1_ALG_HANDLE, &hash, nullptr, 0, nullptr, 0, 0))) {
+	if (!BCRYPT_SUCCESS(BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0))) {
 		fclose(file);
 		return std::nullopt;
 	}
@@ -75,8 +74,8 @@ std::optional<std::string> file_sha1(const std::string &utf8_path)
 	}
 	fclose(file);
 
-	unsigned char digest[20] = {};
-	ok = ok && BCRYPT_SUCCESS(BCryptFinishHash(hash, digest, sizeof(digest), 0));
+	std::vector<unsigned char> digest(digest_size);
+	ok = ok && BCRYPT_SUCCESS(BCryptFinishHash(hash, digest.data(), static_cast<ULONG>(digest.size()), 0));
 	BCryptDestroyHash(hash);
 	if (!ok)
 		return std::nullopt;
@@ -90,9 +89,26 @@ std::optional<std::string> file_sha1(const std::string &utf8_path)
 	return result;
 }
 
+} // namespace
+
+std::optional<std::string> file_sha1(const std::string &utf8_path)
+{
+	return file_hash(utf8_path, BCRYPT_SHA1_ALG_HANDLE, 20);
+}
+
+std::optional<std::string> file_sha256(const std::string &utf8_path)
+{
+	return file_hash(utf8_path, BCRYPT_SHA256_ALG_HANDLE, 32);
+}
+
 #else
 
 std::optional<std::string> file_sha1(const std::string &)
+{
+	return std::nullopt;
+}
+
+std::optional<std::string> file_sha256(const std::string &)
 {
 	return std::nullopt;
 }

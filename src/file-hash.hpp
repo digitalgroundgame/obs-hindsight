@@ -21,7 +21,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <optional>
 #include <string>
 
-// The SHA-1 of a file as lowercase hex, used to check a download against the
-// hash its publisher lists. Windows only for now (it uses the system's
-// BCrypt); elsewhere, and if the file can't be read, returns nothing.
+// The SHA-1 or SHA-256 of a file as lowercase hex, used to check a download
+// against the hash its publisher lists. Windows only for now (they use the
+// system's BCrypt); elsewhere, and if the file can't be read, they return
+// nothing.
 std::optional<std::string> file_sha1(const std::string &utf8_path);
+std::optional<std::string> file_sha256(const std::string &utf8_path);

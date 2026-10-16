@@ -77,7 +77,7 @@ if(NOT APPLE)
 endif()
 
 # DPAPI, which secret-seal.cpp uses to encrypt the saved keys, and BCrypt,
-# which file-sha1.cpp uses to check the speech model download and sha256.cpp
+# which file-hash.cpp uses to check the speech model download and sha256.cpp
 # uses to check a downloaded update.
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32 bcrypt)
