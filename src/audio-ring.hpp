@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 // The last few seconds of a source, mixed down to mono. Once full, each new
@@ -43,11 +44,11 @@ public:
 	// Returns the buffered audio, oldest sample first.
 	std::vector<float> snapshot() const;
 
-	// Replaces the contents of out with the buffered audio, oldest sample
-	// first. Does not allocate when out.capacity() >= size(), so the filter
-	// can reserve the space before taking its lock and hold the lock only for
-	// the copy.
-	void copy_to(std::vector<float> &out) const;
+	// Replaces the contents of out with the newest `newest` buffered samples
+	// (all of them by default), oldest first. Does not allocate when
+	// out.capacity() >= size(), so the filter can reserve the space before
+	// taking its lock and hold the lock only for the copy.
+	void copy_to(std::vector<float> &out, std::size_t newest = SIZE_MAX) const;
 
 private:
 	std::vector<float> samples;
