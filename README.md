@@ -19,6 +19,12 @@ Windows, OBS 31.1 or newer:
 4. Start OBS. **Help > Log Files > View Current Log** should contain
    `[obs-hindsight] plugin loaded successfully`.
 
+The first time OBS starts with Hindsight, it downloads the speech model (about
+142 MB) from Hugging Face in the background. Speech is transcribed on your PC
+with [whisper.cpp](https://github.com/ggml-org/whisper.cpp); your audio is
+never uploaded. Transcription needs a CPU from about 2015 or newer (one with
+AVX2).
+
 ### Windows warnings you will see
 
 The installer is not code-signed yet, so Windows does not know who made it and
@@ -65,17 +71,24 @@ uninstall, delete it.
 
 ## Trying the current build
 
-This is an early test build. It does not transcribe, call Claude or message
-Discord yet; it proves the audio capture.
+This is an early test build. The hotkey transcribes the last 30 seconds of your
+mic on your PC, asks Claude for the question and answer, and writes them to the
+OBS log. It does not message Discord yet.
 
-1. [Install the plugin](#installing).
-2. Open your mic's **Filters**, add **Hindsight**, and close the window.
-3. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
+1. [Install the plugin](#installing) and start OBS. Wait a minute or two for
+   the speech model to download; the log says `speech model downloaded` when
+   it's done.
+2. Under **Tools > Hindsight settings**, enter your Claude API key and click
+   **Save**.
+3. Open your mic's **Filters**, add **Hindsight**, and close the window.
+4. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
    last question" under it.
-4. Talk for a bit, then press the hotkey (or click **Save the last clip now**
-   in the filter's settings).
-5. **Help > Log Files > View Current Log** shows where the WAV was saved. Play
-   it back: it should be the last 30 seconds of your mic.
+5. Ask a question out loud, then press the hotkey (or click **Save the last
+   clip now** in the filter's settings).
+6. **Help > Log Files > View Current Log** shows what Hindsight heard, the
+   question Claude found and its answer, with timings, plus where the clip was
+   saved as a WAV. Because the log holds what you said, check it before
+   sharing it publicly.
 
 ## Update notices
 
@@ -132,7 +145,8 @@ Every pull request runs these on GitHub Actions:
 - **Builds** on Windows, macOS and Ubuntu with warnings treated as errors.
 - **Formatting** with clang-format (C/C++) and gersemi (CMake).
 - **Unit tests** for the code that does not need OBS (the audio buffer and its
-  freshness checks, the WAV encoder, the saved keys and the version comparison)
+  freshness checks, the WAV encoder, the saved keys, the version comparison and
+  the request to Claude and how its reply is read)
   on Ubuntu, once plain and once under AddressSanitizer and
   UndefinedBehaviorSanitizer, which catch memory bugs and undefined behavior.
   They also run on Windows, the only place the key encryption code runs.
@@ -149,8 +163,10 @@ ctest --test-dir build_tests --output-on-failure
 Code that OBS does not need to run, like the WAV encoder, goes in its own
 file under `src/` without OBS includes, so it can be tested this way. The audio
 buffer is the one exception: it uses libobs's header-only `util/deque.h`, which
-the test build downloads for the OBS version in `buildspec.json` (so the first
-configure needs internet access).
+the test build downloads for the OBS version in `buildspec.json`. JSON is read
+and written with [nlohmann/json](https://github.com/nlohmann/json), which both
+the plugin and test builds download, pinned by hash. So the first configure
+needs internet access.
 
 ## License
 

@@ -20,6 +20,5 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 // Registers the "Hindsight" audio filter. Added to the streamer's mic, it
 // keeps the last few seconds of that mic in memory and, on its hotkey, hands
-// them off. For now that means saving a WAV file; transcription, Claude and
-// Discord come later.
+// them to answer-pipeline.cpp, and saves them as a WAV file.
 void register_hindsight_filter();

@@ -45,5 +45,5 @@ void update_install_start(obs_source_t *source);
 UpdateInstallState update_install_state();
 
 // Cancels a download and waits for its thread. Call from obs_module_unload,
-// before update_check_stop (which shuts curl down).
+// before curl is shut down.
 void update_install_stop();

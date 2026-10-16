@@ -9,8 +9,12 @@ set(
   "${CMAKE_CURRENT_LIST_DIR}/audio-freshness.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/claude-answer.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/claude-answer.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-file.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-file.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/file-sha1.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/file-sha1.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/private-file.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/private-file.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/secret-seal.cpp"
@@ -26,3 +30,22 @@ set(
   "${CMAKE_CURRENT_LIST_DIR}/wav.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/wav.hpp"
 )
+
+# nlohmann/json, the single-header JSON library obs-websocket also uses, for
+# the JSON the core files read and write. Downloaded at configure time and
+# pinned by hash; add HINDSIGHT_JSON_INCLUDE_DIR as a SYSTEM include.
+set(HINDSIGHT_JSON_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/nlohmann-json-3.11.3")
+set(_hindsight_json "${HINDSIGHT_JSON_INCLUDE_DIR}/nlohmann/json.hpp")
+if(NOT EXISTS "${_hindsight_json}")
+  file(
+    DOWNLOAD "https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp" "${_hindsight_json}"
+    TLS_VERIFY ON
+    EXPECTED_HASH SHA256=9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6
+    STATUS _hindsight_json_status
+  )
+  list(GET _hindsight_json_status 0 _hindsight_json_code)
+  if(NOT _hindsight_json_code EQUAL 0)
+    file(REMOVE "${_hindsight_json}")
+    message(FATAL_ERROR "Could not download nlohmann/json 3.11.3: ${_hindsight_json_status}")
+  endif()
+endif()

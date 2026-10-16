@@ -26,7 +26,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // The request runs on its own thread so it never slows OBS down, and any
 // failure (offline, private repo, rate limit) just means no notice.
 
-// Starts the check. Call from obs_module_load.
+// Starts the check. Call from obs_module_load, after curl_global_init.
 void update_check_start();
 
 // Cancels the check if it is still running and waits for its thread. Call

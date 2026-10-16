@@ -81,5 +81,7 @@ jobs:
 
       - name: Run clang-tidy 🔬
         run: |
-          run-clang-tidy-18 -quiet -p build_tidy src/
+          # The full path, so whisper.cpp's own src/ folder (fetched into
+          # the build folder) isn't checked too.
+          run-clang-tidy-18 -quiet -p build_tidy "$PWD/src/"
           run-clang-tidy-18 -quiet -p build_tests tests/
