@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 
 // The request Hindsight sends to the Claude Messages API, and how it reads the
@@ -31,7 +32,7 @@ constexpr const char *kClaudeApiVersion = "2023-06-01";
 
 // The longest answer Claude is asked for. The DGG server cuts anything
 // longer, so this keeps answers whole.
-constexpr int kMaxAnswerCharacters = 1700;
+constexpr size_t kMaxAnswerCharacters = 1700;
 
 // The JSON body for POST /v1/messages: the transcript of the last few seconds
 // of the streamer's mic, and a tool Claude must call with the question it
@@ -55,5 +56,10 @@ struct ClaudeAnswer {
 	std::string error_message;
 };
 
-// Reads the API's reply to build_claude_request, given its HTTP status.
+// Cuts text longer than max_characters (Unicode code points) to fit,
+// ending it with "…". Never splits a UTF-8 character.
+std::string shorten_text(const std::string &text, size_t max_characters);
+
+// Reads the API's reply to build_claude_request, given its HTTP status. An
+// answer longer than kMaxAnswerCharacters is shortened to fit.
 ClaudeAnswer parse_claude_response(long status, const std::string &body);

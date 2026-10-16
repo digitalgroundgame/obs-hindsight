@@ -115,6 +115,25 @@ void rejects_replies_it_cannot_read()
 	CHECK(odd.outcome == ClaudeAnswer::Outcome::no_question);
 }
 
+void shortens_long_text()
+{
+	CHECK(shorten_text("hello", 5) == "hello");
+	CHECK(shorten_text("hello!", 5) == "hell\xE2\x80\xA6");
+	// "é" is two bytes but one character, and is never split.
+	CHECK(shorten_text("\xC3\xA9\xC3\xA9\xC3\xA9", 3) == "\xC3\xA9\xC3\xA9\xC3\xA9");
+	CHECK(shorten_text("\xC3\xA9\xC3\xA9\xC3\xA9", 2) == "\xC3\xA9\xE2\x80\xA6");
+}
+
+void long_answers_are_shortened()
+{
+	const std::string answer(kMaxAnswerCharacters + 50, 'a');
+	const ClaudeAnswer result = parse_claude_response(200, tool_reply("Why?", answer));
+	CHECK(result.outcome == ClaudeAnswer::Outcome::answered);
+	// kMaxAnswerCharacters - 1 letters and a three-byte ellipsis.
+	CHECK(result.answer.size() == kMaxAnswerCharacters - 1 + 3);
+	CHECK(result.answer.compare(result.answer.size() - 3, 3, "\xE2\x80\xA6") == 0);
+}
+
 } // namespace
 
 int main()
@@ -127,6 +146,8 @@ int main()
 		empty_fields_mean_no_question();
 		reads_api_errors();
 		rejects_replies_it_cannot_read();
+		shortens_long_text();
+		long_answers_are_shortened();
 	} catch (const std::exception &e) {
 		std::printf("threw: %s\n", e.what());
 		return 1;

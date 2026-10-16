@@ -65,6 +65,24 @@ ClaudeAnswer failure(std::string type, std::string message = {})
 
 } // namespace
 
+std::string shorten_text(const std::string &text, size_t max_characters)
+{
+	if (max_characters == 0)
+		return {};
+	// Counts code points by their first byte; continuation bytes are 10xxxxxx.
+	size_t characters = 0;
+	size_t cut = 0; // where the kept part ends, leaving room for the ellipsis
+	for (size_t i = 0; i < text.size(); i++) {
+		if ((static_cast<unsigned char>(text[i]) & 0xC0) == 0x80)
+			continue;
+		if (characters == max_characters - 1)
+			cut = i;
+		if (++characters > max_characters)
+			return text.substr(0, cut) + "\xE2\x80\xA6"; // …
+	}
+	return text;
+}
+
 std::string build_claude_request(const std::string &transcript)
 {
 	const json input_schema = {
@@ -135,7 +153,7 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 
 		ClaudeAnswer result;
 		result.question = trimmed(string_at(*input, "question"));
-		result.answer = trimmed(string_at(*input, "answer"));
+		result.answer = shorten_text(trimmed(string_at(*input, "answer")), kMaxAnswerCharacters);
 		// A question with no answer (or the reverse) has nothing to send.
 		if (result.question.empty() || result.answer.empty()) {
 			result.outcome = ClaudeAnswer::Outcome::no_question;
