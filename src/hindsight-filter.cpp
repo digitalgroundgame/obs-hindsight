@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "hindsight-filter.hpp"
 #include "audio-freshness.hpp"
 #include "audio-ring.hpp"
+#include "secret-store.hpp"
 #include "wav.hpp"
 
 #include <obs-module.h>
@@ -55,9 +56,8 @@ struct HindsightFilter {
 	AudioRing ring;
 	uint64_t last_push_ns = 0; // when the newest buffered audio arrived
 
-	// Stored for the next steps; the spike does not use them yet.
-	std::string claude_api_key;
-	std::string discord_bot_token;
+	// The API keys are not here: every filter shares the ones in
+	// secret-store.cpp.
 	std::string discord_user_id;
 };
 
@@ -151,6 +151,25 @@ void on_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 		capture(static_cast<HindsightFilter *>(data));
 }
 
+// Keys are entered under Tools > Hindsight settings. Version 0.1.0 kept them in
+// the filter settings instead; move any found there into the shared secret
+// store (unless a key is already saved there), then remove them from the
+// settings and so from the scene collection.
+void take_keys_from_settings(obs_data_t *settings)
+{
+	Secrets old;
+	old.claude_api_key = obs_data_get_string(settings, kClaudeApiKeyName);
+	old.discord_bot_token = obs_data_get_string(settings, kDiscordBotTokenName);
+	if (old.claude_api_key.empty() && old.discord_bot_token.empty())
+		return;
+
+	// Leave the keys in the settings rather than lose them.
+	if (!secret_store_take_old_keys(old))
+		return;
+	obs_data_erase(settings, kClaudeApiKeyName);
+	obs_data_erase(settings, kDiscordBotTokenName);
+}
+
 bool on_save_clip_clicked(obs_properties_t *, obs_property_t *, void *data)
 {
 	capture(static_cast<HindsightFilter *>(data));
@@ -170,6 +189,8 @@ void update(void *data, obs_data_t *settings)
 				       kMinWindowSeconds, kMaxWindowSeconds);
 	const size_t size = static_cast<size_t>(seconds) * filter->sample_rate;
 
+	take_keys_from_settings(settings);
+
 	// A resized ring is a few megabytes. Build it before taking the lock the
 	// audio thread waits on; the old one is freed with `resized` after the
 	// lock is released.
@@ -183,8 +204,6 @@ void update(void *data, obs_data_t *settings)
 		resized.reset(size);
 
 	std::lock_guard<std::mutex> guard(filter->lock);
-	filter->claude_api_key = obs_data_get_string(settings, "claude_api_key");
-	filter->discord_bot_token = obs_data_get_string(settings, "discord_bot_token");
 	filter->discord_user_id = obs_data_get_string(settings, "discord_user_id");
 
 	if (resize && filter->ring.capacity() != size)
@@ -247,9 +266,10 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
 	obs_property_text_set_info_type(note, OBS_TEXT_INFO_NORMAL);
 
-	obs_properties_add_text(props, "claude_api_key", obs_module_text("Hindsight.ClaudeApiKey"), OBS_TEXT_PASSWORD);
-	obs_properties_add_text(props, "discord_bot_token", obs_module_text("Hindsight.DiscordBotToken"),
-				OBS_TEXT_PASSWORD);
+	obs_property_t *keys_note =
+		obs_properties_add_text(props, "keys_note", obs_module_text("Hindsight.KeysNote"), OBS_TEXT_INFO);
+	obs_property_text_set_info_type(keys_note, OBS_TEXT_INFO_NORMAL);
+
 	obs_properties_add_text(props, "discord_user_id", obs_module_text("Hindsight.DiscordUserId"), OBS_TEXT_DEFAULT);
 	obs_properties_add_int_slider(props, "window_seconds", obs_module_text("Hindsight.WindowSeconds"),
 				      kMinWindowSeconds, kMaxWindowSeconds, 1);
