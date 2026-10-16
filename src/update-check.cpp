@@ -33,7 +33,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <thread>
 #include <utility>
 
-const char *const kHindsightReleasesPage = "https://github.com/digitalgroundgame/obs-hindsight/releases/latest";
+// Our own site redirects this to the newest release on GitHub, so the link
+// can move without a plugin update. Update now still reads GitHub's API
+// directly, since that is where the installer's SHA-256 comes from.
+const char *const kHindsightReleasesPage = "https://stream-widgets.digitalgroundgame.org/hindsight/update";
 
 namespace {
 
