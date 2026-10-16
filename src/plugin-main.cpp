@@ -22,6 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "hindsight-filter.hpp"
 #include "secret-store.hpp"
 #include "settings-dialog.hpp"
+#include "update-check.hpp"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -32,10 +33,12 @@ bool obs_module_load(void)
 	register_hindsight_filter();
 	register_settings_dialog();
 	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
+	update_check_start();
 	return true;
 }
 
 void obs_module_unload(void)
 {
+	update_check_stop();
 	obs_log(LOG_INFO, "plugin unloaded");
 }
