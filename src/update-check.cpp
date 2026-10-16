@@ -85,8 +85,9 @@ std::optional<std::string> fetch_latest_tag()
 	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 	curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, on_progress);
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20L);
+	// Short limits: OBS waits for this thread when it closes.
+	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
 
 	const CURLcode result = curl_easy_perform(curl);
 	long status = 0;
@@ -143,6 +144,15 @@ void update_check_start()
 	curl_ready = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
 	if (!curl_ready) {
 		obs_log(LOG_WARNING, "update check skipped: curl failed to start");
+		return;
+	}
+	// Without an asynchronous resolver, curl looks up names in one blocking
+	// call that ignores our timeouts (CURLOPT_NOSIGNAL turns off the alarm it
+	// would use) and never calls on_progress. A slow DNS server could then
+	// hold up closing OBS, so skip the check rather than risk that.
+	const curl_version_info_data *info = curl_version_info(CURLVERSION_NOW);
+	if (!(info->features & CURL_VERSION_ASYNCHDNS)) {
+		obs_log(LOG_INFO, "update check skipped: this curl build cannot look up names in the background");
 		return;
 	}
 	stopping = false;
