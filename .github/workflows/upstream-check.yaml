@@ -40,8 +40,10 @@ jobs:
           # whisper.cpp, pinned by release and commit in src/whisper.cmake.
           if [[ -f src/whisper.cmake ]]; then
             whisper_pinned=$(sed -n 's/^set(_whisper_version \(v[^)]*\))$/\1/p' src/whisper.cmake)
-            whisper_latest=$(gh api repos/ggml-org/whisper.cpp/releases/latest --jq .tag_name)
-            if [[ -z "${whisper_pinned}" ]]; then
+            whisper_latest=$(gh api repos/ggml-org/whisper.cpp/releases/latest --jq .tag_name) || whisper_latest=''
+            if [[ -z "${whisper_latest}" ]]; then
+              body+="- **whisper.cpp**: could not look up its latest release; check https://github.com/ggml-org/whisper.cpp/releases by hand."$'\n'
+            elif [[ -z "${whisper_pinned}" ]]; then
               body+="- **whisper.cpp**: could not read \`_whisper_version\` from \`src/whisper.cmake\`, so this check needs updating."$'\n'
             elif [[ "${whisper_pinned}" != "${whisper_latest}" ]]; then
               body+="- **whisper.cpp ${whisper_latest}** is out; \`src/whisper.cmake\` pins ${whisper_pinned}: https://github.com/ggml-org/whisper.cpp/compare/${whisper_pinned}...${whisper_latest}"$'\n'
@@ -56,7 +58,7 @@ jobs:
             repo=$(cut -d/ -f1-2 <<< "${action}")
             latest=$(gh api "repos/${repo}/releases/latest" --jq .tag_name 2>/dev/null) || continue
             if [[ "${ref}" =~ ^[0-9a-f]{40}$ ]]; then
-              latest_sha=$(gh api "repos/${repo}/commits/${latest}" --jq .sha)
+              latest_sha=$(gh api "repos/${repo}/commits/${latest}" --jq .sha 2>/dev/null) || continue
               [[ "${ref}" == "${latest_sha}" ]] && continue
               body+="- **${repo} ${latest}** is out; the workflows pin commit ${ref:0:7}: https://github.com/${repo}/compare/${ref}...${latest}"$'\n'
             elif [[ "$(cut -d. -f1 <<< "${ref#v}")" != "$(cut -d. -f1 <<< "${latest#v}")" ]]; then
