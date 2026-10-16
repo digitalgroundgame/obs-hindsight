@@ -22,6 +22,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
 #include "speech-model.hpp"
+#include "update-check.hpp"
+#include "update-notice.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -29,6 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <QCheckBox>
 #include <QDialog>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -37,6 +40,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace {
@@ -117,7 +121,7 @@ void show_model_status(const ModelRow &row)
 	}
 }
 
-ModelRow add_model_row(QVBoxLayout *layout, QDialog *dialog)
+void add_model_row(QVBoxLayout *layout, QDialog *dialog)
 {
 	ModelRow row;
 	row.label = new QLabel(dialog);
@@ -140,7 +144,52 @@ ModelRow add_model_row(QVBoxLayout *layout, QDialog *dialog)
 	QObject::connect(timer, &QTimer::timeout, dialog, [row]() { show_model_status(row); });
 	timer->start(250);
 	show_model_status(row);
-	return row;
+}
+
+// The same update notice as the filter's settings, at the top of the window,
+// or a Check for updates button when there is none. A timer redraws it while
+// the window is open, so it follows a check or a download.
+void add_update_notice(QVBoxLayout *layout, QDialog *dialog)
+{
+	auto *text = new QLabel(dialog);
+	text->setWordWrap(true);
+	layout->addWidget(text);
+	auto *update_now = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.UpdateNow")), dialog);
+	auto *release_page = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.DownloadUpdate")), dialog);
+	auto *check_now = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.CheckNow")), dialog);
+	auto *line = new QHBoxLayout();
+	line->addWidget(update_now);
+	line->addWidget(release_page);
+	line->addWidget(check_now);
+	line->addStretch(1);
+	layout->addLayout(line);
+
+	auto refresh = [text, update_now, release_page, check_now]() {
+		const UpdateNotice notice = update_notice_current();
+		const std::string status = notice.show ? notice.text : update_check_status_text();
+		text->setText(QString::fromStdString(status));
+		text->setVisible(!status.empty());
+		update_now->setVisible(notice.offer_update_now);
+		update_now->setEnabled(notice.update_now_enabled);
+		release_page->setVisible(notice.offer_release_page);
+		check_now->setVisible(!notice.show);
+		check_now->setEnabled(!update_check_running());
+	};
+	refresh();
+
+	QObject::connect(update_now, &QPushButton::clicked, dialog, [refresh]() {
+		update_notice_update_now(nullptr);
+		refresh();
+	});
+	QObject::connect(release_page, &QPushButton::clicked, dialog,
+			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kHindsightReleasesPage))); });
+	QObject::connect(check_now, &QPushButton::clicked, dialog, [refresh]() {
+		update_check_start();
+		refresh();
+	});
+	auto *timer = new QTimer(dialog);
+	QObject::connect(timer, &QTimer::timeout, dialog, refresh);
+	timer->start(500);
 }
 
 void open_settings_dialog(void *)
@@ -151,6 +200,8 @@ void open_settings_dialog(void *)
 	dialog.setMinimumWidth(480);
 
 	auto *layout = new QVBoxLayout(&dialog);
+	add_update_notice(layout, &dialog);
+
 	auto *note = new QLabel(QString::fromUtf8(obs_module_text("Hindsight.SettingsNote")), &dialog);
 	note->setWordWrap(true);
 	layout->addWidget(note);

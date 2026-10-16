@@ -97,12 +97,16 @@ void answer(const Clip &clip)
 	switch (reply.outcome) {
 	case ClaudeAnswer::Outcome::answered:
 		obs_log(LOG_INFO, "question: %s", reply.question.c_str());
-		obs_log(LOG_INFO, "answer (Claude took %.1f s, %.1f s in all): %s", seconds_since(asked),
-			seconds_since(start), reply.answer.c_str());
+		obs_log(LOG_INFO,
+			"answer (Claude took %.1f s, %.1f s in all; cost $%.5f for %lld in, %lld out tokens): %s",
+			seconds_since(asked), seconds_since(start),
+			claude_cost_dollars(reply.input_tokens, reply.output_tokens), reply.input_tokens,
+			reply.output_tokens, reply.answer.c_str());
 		break;
 	case ClaudeAnswer::Outcome::no_question:
-		obs_log(LOG_INFO, "Claude found no clear question in that clip (%.1f s), so nothing to send",
-			seconds_since(asked));
+		obs_log(LOG_INFO,
+			"Claude found no clear question in that clip (%.1f s, cost $%.5f), so nothing to send",
+			seconds_since(asked), claude_cost_dollars(reply.input_tokens, reply.output_tokens));
 		break;
 	case ClaudeAnswer::Outcome::failed:
 		if (reply.error_type == "authentication_error")
