@@ -50,7 +50,9 @@ VersionInfoVersion={#FileVersion}
 DefaultDirName={commonappdata}\obs-studio\plugins\{#PluginName}
 DisableDirPage=yes
 DisableProgramGroupPage=yes
-DisableReadyPage=yes
+; Inno Setup 6 skips the welcome page by default, so with the folder and Start
+; menu pages off too, streamers land on Ready to Install with its Install
+; button. That page's text is in [Messages].
 ; ProgramData\obs-studio\plugins is shared by every Windows user, so writing
 ; there needs administrator rights (one UAC prompt).
 PrivilegesRequired=admin
@@ -68,7 +70,9 @@ WizardStyle=modern
 SetupLogging=yes
 
 [Messages]
-WelcomeLabel2=This will install [name/ver] into OBS Studio.%n%nClose OBS before you continue. If it is open, Setup will offer to close it.
+ReadyLabel1=Setup is ready to install [name/ver] into OBS Studio.
+ReadyLabel2a=Close OBS before you click Install. If it is open, Setup will offer to close it.
+ReadyLabel2b=Close OBS before you click Install. If it is open, Setup will offer to close it.
 FinishedLabel=Setup has installed [name] into OBS Studio. Start OBS and add the Hindsight filter to your microphone.
 
 [InstallDelete]
