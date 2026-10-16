@@ -98,11 +98,7 @@ void clips_loud_samples()
 
 void refuses_more_than_fits_the_header()
 {
-	// The RIFF size field holds 36 + 2 bytes per sample in 32 bits. These
-	// are known at compile time, so check them there (MSVC also rejects a
-	// constant condition in a runtime check).
-	static_assert(36 + 2 * static_cast<uint64_t>(kMaxWavSamples) <= UINT32_MAX);
-	static_assert(36 + 2 * static_cast<uint64_t>(kMaxWavSamples + 1) > UINT32_MAX);
+	// wav.hpp checks the limit itself at compile time.
 
 	// encode_wav uses wav_fits to refuse; a real vector that big is too much
 	// memory for a test, so check the cut-off itself.

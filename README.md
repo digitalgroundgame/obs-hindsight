@@ -103,11 +103,11 @@ Every pull request runs these on GitHub Actions:
 
 - **Builds** on Windows, macOS and Ubuntu with warnings treated as errors.
 - **Formatting** with clang-format (C/C++) and gersemi (CMake).
-- **Unit tests** for the code that does not need OBS (the audio buffer, the
-  WAV encoder, the saved keys and the version comparison) on Ubuntu, once plain
-  and once under AddressSanitizer and UndefinedBehaviorSanitizer, which catch
-  memory bugs and undefined behavior. They also run on Windows, the only place
-  the key encryption code runs.
+- **Unit tests** for the code that does not need OBS (the audio buffer and its
+  freshness checks, the WAV encoder, the saved keys and the version comparison)
+  on Ubuntu, once plain and once under AddressSanitizer and
+  UndefinedBehaviorSanitizer, which catch memory bugs and undefined behavior.
+  They also run on Windows, the only place the key encryption code runs.
 - **clang-tidy**, with the bug-finding rules listed in [.clang-tidy](.clang-tidy).
 
 To run the unit tests locally (no OBS needed):

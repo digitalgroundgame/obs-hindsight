@@ -41,6 +41,16 @@ void rejects_other_files()
 	CHECK(text.empty());
 	CHECK(!open_secrets_text("", text));
 	CHECK(!open_secrets_text("other:Zm9v\n", text));
+
+	// A Windows keys file that is damaged, or encrypted for another account
+	// or PC (valid base64 that DPAPI refuses), opens to nothing.
+	text = "left over";
+	CHECK(!open_secrets_text("dpapi:!!!\n", text));
+	CHECK(text.empty());
+	CHECK(!open_secrets_text("dpapi:Zm9vYmFy\n", text));
+	CHECK(text.empty());
+	CHECK(!open_secrets_text("dpapi:\n", text));
+	CHECK(text.empty());
 }
 
 } // namespace

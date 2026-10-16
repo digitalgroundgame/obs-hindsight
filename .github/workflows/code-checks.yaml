@@ -18,6 +18,13 @@ jobs:
   unit-tests:
     name: Unit Tests 🧪 (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    env:
+      CONFIG: Debug
+    defaults:
+      run:
+        # Bash on every runner (Git Bash on Windows), so a failing command
+        # fails the step everywhere.
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -30,6 +37,7 @@ jobs:
             sanitize: 'ON'
           # The only run of the Windows-only code, like the DPAPI key
           # encryption in secret-seal.cpp, before it reaches streamers.
+          # MSVC has no UBSan, so no sanitizer run here.
           - name: Windows
             os: windows-2022
             sanitize: 'OFF'
@@ -38,14 +46,16 @@ jobs:
 
       - name: Build Tests 🧱
         run: |
-          cmake -S tests -B build_tests -DCMAKE_BUILD_TYPE=Debug -DHINDSIGHT_SANITIZE=${{ matrix.sanitize }}
-          cmake --build build_tests --parallel --config Debug
+          cmake -S tests -B build_tests -DCMAKE_BUILD_TYPE=${CONFIG} -DHINDSIGHT_SANITIZE=${{ matrix.sanitize }}
+          cmake --build build_tests --parallel --config ${CONFIG}
 
       - name: Run Tests 🧪
         env:
-          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
-          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-        run: ctest --test-dir build_tests -C Debug --output-on-failure
+          ASAN_OPTIONS: ${{ matrix.sanitize == 'ON' && 'detect_leaks=1:abort_on_error=1' || '' }}
+          UBSAN_OPTIONS: ${{ matrix.sanitize == 'ON' && 'print_stacktrace=1:halt_on_error=1' || '' }}
+        # --no-tests=error: a job that finds no tests (say, the wrong
+        # configuration on Windows) fails instead of passing.
+        run: ctest --test-dir build_tests -C ${CONFIG} --output-on-failure --no-tests=error
 
   clang-tidy:
     name: clang-tidy 🔬
