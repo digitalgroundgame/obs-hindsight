@@ -78,9 +78,23 @@ Discord yet; it proves the audio capture.
 
 Each time OBS starts, Hindsight asks GitHub once for the latest release. If a
 newer one is out, the top of the Hindsight filter's settings says so, with a
-**Download the update** button, and the OBS log notes it. The request goes to
-`api.github.com` and carries only the plugin version. If GitHub cannot be
+**Download the update** button, and the OBS log notes it. If GitHub cannot be
 reached, Hindsight carries on without a notice.
+
+### What the update check sends
+
+One HTTPS GET to
+`https://api.github.com/repos/digitalgroundgame/obs-hindsight/releases/latest`
+with `User-Agent: obs-hindsight/<version>` (GitHub requires one) and an
+`Accept` header asking for JSON. Nothing else: no keys, no audio, no details
+about you or your PC. Like any web request, it shows GitHub your IP address.
+
+### Turning it off
+
+Open **Tools > Hindsight settings**, untick **Check for updates when OBS
+starts**, and click **Save**. The choice is kept in `settings.json` in
+Hindsight's config folder, apart from your keys. Ticking it again takes effect
+the next time OBS starts.
 
 ## Building
 
