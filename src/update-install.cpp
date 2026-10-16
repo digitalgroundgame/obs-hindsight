@@ -215,7 +215,12 @@ void run_update(UpdateInstaller installer)
 	}
 
 	obs_log(LOG_INFO, "update: SHA-256 matches; starting the installer");
-	set_state(launch_installer(path) ? UpdateInstallState::started : UpdateInstallState::failed);
+	if (launch_installer(path)) {
+		set_state(UpdateInstallState::started);
+	} else {
+		DeleteFileW(path.c_str());
+		set_state(UpdateInstallState::failed);
+	}
 }
 
 #endif
@@ -235,7 +240,9 @@ void update_install_start(obs_source_t *source)
 {
 #ifdef _WIN32
 	const UpdateInstallState current = state.load();
-	if (current == UpdateInstallState::downloading || current == UpdateInstallState::started)
+	// After started, a click means the streamer said No to the Windows
+	// prompt or closed Setup, so start over.
+	if (current == UpdateInstallState::downloading)
 		return;
 	std::optional<UpdateInstaller> installer = update_check_installer();
 	if (!installer)

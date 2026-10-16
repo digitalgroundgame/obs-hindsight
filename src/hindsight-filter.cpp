@@ -394,8 +394,7 @@ bool add_update_now(obs_properties_t *props, HindsightFilter *filter, const std:
 
 	obs_property_t *button = obs_properties_add_button2(props, "update_now", obs_module_text("Hindsight.UpdateNow"),
 							    on_update_now_clicked, filter);
-	obs_property_set_enabled(button,
-				 state != UpdateInstallState::downloading && state != UpdateInstallState::started);
+	obs_property_set_enabled(button, state != UpdateInstallState::downloading);
 	return offer_page;
 }
 

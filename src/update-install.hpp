@@ -28,7 +28,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 enum class UpdateInstallState {
 	idle,        // nothing started yet
 	downloading, // fetching and checking the installer
-	started,     // the installer is open
+	started,     // the installer was opened (it may since have been cancelled)
 	failed,      // the download, the check or starting the installer failed
 };
 
@@ -36,8 +36,9 @@ enum class UpdateInstallState {
 // installer with a SHA-256.
 bool update_install_supported();
 
-// Starts the download on its own thread unless one is running or the
-// installer already started. source is the filter whose settings show the
+// Starts the download on its own thread unless one is running. Clicking
+// again after the installer started downloads and starts it again, in case
+// the streamer cancelled it. source is the filter whose settings show the
 // button; they are refreshed as the state changes.
 void update_install_start(obs_source_t *source);
 
