@@ -64,6 +64,11 @@ public:
 	// taking its lock and hold the lock only for the copy.
 	void copy_to(std::vector<float> &out, std::size_t newest = SIZE_MAX) const;
 
+	// Replaces the buffered audio with the newest samples of other, as many
+	// as fit, oldest first. Never allocates: reset() already reserved the
+	// space. Lets the filter resize the ring without losing what it heard.
+	void take_newest_from(const AudioRing &other);
+
 private:
 	// Sized in bytes, like every libobs deque; size() converts to samples.
 	deque queue;

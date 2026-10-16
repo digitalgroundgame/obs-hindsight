@@ -91,3 +91,20 @@ void AudioRing::copy_to(std::vector<float> &out, std::size_t newest) const
 		// deque_peek_back only reads, but libobs declares it non-const.
 		deque_peek_back(const_cast<deque *>(&queue), out.data(), count * sizeof(float));
 }
+
+void AudioRing::take_newest_from(const AudioRing &other)
+{
+	if (&other == this)
+		return;
+
+	clear();
+	const std::size_t bytes = std::min(other.size(), max_samples) * sizeof(float);
+	if (bytes == 0)
+		return;
+
+	// clear() left the queue starting at 0, so growing it within the
+	// reserved space gives one run of bytes to copy straight into.
+	deque_upsize(&queue, bytes);
+	// deque_peek_back only reads, but libobs declares it non-const.
+	deque_peek_back(const_cast<deque *>(&other.queue), deque_data(&queue, 0), bytes);
+}

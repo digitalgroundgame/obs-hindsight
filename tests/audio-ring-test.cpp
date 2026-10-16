@@ -19,8 +19,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "audio-ring.hpp"
 #include "check.hpp"
 
+#include <cstddef>
 #include <utility>
 #include <vector>
+
+// Counted by bmem-shim.cpp.
+extern std::size_t bmem_shim_allocations;
 
 namespace {
 
@@ -227,6 +231,74 @@ void swap_exchanges_the_audio()
 	CHECK(live.snapshot() == (std::vector<float>{3.0f}));
 }
 
+void take_newest_from_keeps_all_when_growing()
+{
+	AudioRing live;
+	live.reset(4);
+	push_mono(live, {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f});
+
+	AudioRing resized;
+	resized.reset(8);
+	const std::size_t allocations = bmem_shim_allocations;
+	resized.take_newest_from(live);
+	CHECK(bmem_shim_allocations == allocations);
+	CHECK(resized.capacity() == 8);
+	CHECK(resized.snapshot() == (std::vector<float>{3.0f, 4.0f, 5.0f, 6.0f}));
+
+	// The carried audio is the start of the new window, not the whole of it.
+	push_mono(resized, {7.0f, 8.0f, 9.0f, 10.0f, 11.0f});
+	CHECK(bmem_shim_allocations == allocations);
+	CHECK(resized.snapshot() == (std::vector<float>{4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 11.0f}));
+	CHECK(live.snapshot() == (std::vector<float>{3.0f, 4.0f, 5.0f, 6.0f}));
+}
+
+void take_newest_from_keeps_newest_when_shrinking()
+{
+	AudioRing live;
+	live.reset(6);
+	push_mono(live, {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f});
+
+	AudioRing resized;
+	resized.reset(3);
+	const std::size_t allocations = bmem_shim_allocations;
+	resized.take_newest_from(live);
+	CHECK(bmem_shim_allocations == allocations);
+	CHECK(resized.capacity() == 3);
+	CHECK(resized.snapshot() == (std::vector<float>{6.0f, 7.0f, 8.0f}));
+
+	push_mono(resized, {9.0f});
+	CHECK(bmem_shim_allocations == allocations);
+	CHECK(resized.snapshot() == (std::vector<float>{7.0f, 8.0f, 9.0f}));
+}
+
+void take_newest_from_replaces_what_was_there()
+{
+	AudioRing live;
+	live.reset(4);
+	push_mono(live, {1.0f, 2.0f});
+
+	// A ring that has wrapped, so its own audio does not start at the front.
+	AudioRing resized;
+	resized.reset(3);
+	push_mono(resized, {7.0f, 8.0f, 9.0f, 10.0f});
+	resized.take_newest_from(live);
+	CHECK(resized.snapshot() == (std::vector<float>{1.0f, 2.0f}));
+	// Taking from itself keeps its audio.
+	resized.take_newest_from(resized);
+	CHECK(resized.snapshot() == (std::vector<float>{1.0f, 2.0f}));
+
+	// Nothing to take leaves it empty.
+	AudioRing empty;
+	empty.reset(4);
+	resized.take_newest_from(empty);
+	CHECK(resized.size() == 0);
+
+	// An unsized ring has no room to take anything into.
+	AudioRing unsized;
+	unsized.take_newest_from(live);
+	CHECK(unsized.snapshot().empty());
+}
+
 } // namespace
 
 int main()
@@ -246,5 +318,8 @@ int main()
 	clear_and_reset_zero_are_safe_when_empty();
 	move_takes_the_audio();
 	swap_exchanges_the_audio();
+	take_newest_from_keeps_all_when_growing();
+	take_newest_from_keeps_newest_when_shrinking();
+	take_newest_from_replaces_what_was_there();
 	return check::finish();
 }
