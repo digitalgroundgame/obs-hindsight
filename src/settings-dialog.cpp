@@ -119,7 +119,7 @@ StatusLine add_status_line(QGridLayout *grid, QWidget *parent)
 	QFont bold = line.mark->font();
 	bold.setBold(true);
 	line.mark->setFont(bold);
-	line.mark->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+	line.mark->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
 	line.mark->setMinimumWidth(line.mark->fontMetrics().horizontalAdvance(QStringLiteral("✕")) + 4);
 	line.label = new QLabel(parent);
 	line.label->setWordWrap(true);
