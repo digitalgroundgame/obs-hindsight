@@ -53,7 +53,7 @@ On Windows, the easiest way to update is the **Update now** button in the
 Hindsight filter's settings (see [Update notices](#update-notices)). You can
 also run the newer installer the same way as the first one. Either way it
 replaces the old version and keeps your settings and keys. If OBS is open, the
-installer offers to close it.
+installer offers to close it, and its last page can start OBS again.
 
 To uninstall, open Windows **Settings > Apps > Installed apps**, find
 **Hindsight for OBS**, and choose **Uninstall**.
@@ -70,6 +70,9 @@ bar to get there. To update, replace the folder with the new one. To
 uninstall, delete it.
 
 ## Trying the current build
+
+<!-- The Windows installer links to this heading (#trying-the-current-build).
+If you rename it, update the link in cmake/windows/resources/installer-Windows.iss. -->
 
 This is an early test build. The hotkey transcribes the last 30 seconds of your
 mic on your PC, asks Claude for the question and answer, and writes them to the
