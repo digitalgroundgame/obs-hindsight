@@ -150,6 +150,7 @@ This section is the one place the secret rules live; other skills link here.
 
 For the rest of the pipeline, load `whisper-docs` (transcription),
 `claude-api-docs` (asking Claude) and `discord-api-docs` (sending the answer).
+For UI and anything built on Qt, load `qt-docs`.
 
 ## When you change plugin code
 
