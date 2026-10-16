@@ -68,6 +68,20 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 SetupLogging=yes
+; Branding. Each file is optional, and Inno's defaults show when it is
+; missing. See installer-branding/README.md for sizes. The wildcards pick up
+; the larger copies Windows uses at higher display scaling.
+#define Branding AddBackslash(SourcePath) + "installer-branding\"
+#if FileExists(Branding + "setup-icon.ico")
+SetupIconFile={#Branding}setup-icon.ico
+UninstallDisplayIcon={app}\setup-icon.ico
+#endif
+#if FileExists(Branding + "wizard-image.bmp")
+WizardImageFile={#Branding}wizard-image*.bmp
+#endif
+#if FileExists(Branding + "wizard-small-image.bmp")
+WizardSmallImageFile={#Branding}wizard-small-image*.bmp
+#endif
 
 [Messages]
 ReadyLabel1=Setup is ready to install [name/ver] into OBS Studio.
@@ -81,4 +95,8 @@ Type: filesandordirs; Name: "{app}\bin"
 Type: filesandordirs; Name: "{app}\data"
 
 [Files]
+#if FileExists(Branding + "setup-icon.ico")
+; The icon Settings > Apps shows next to "Hindsight for OBS".
+Source: "{#Branding}setup-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+#endif
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
