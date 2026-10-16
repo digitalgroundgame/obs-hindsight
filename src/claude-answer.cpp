@@ -116,7 +116,7 @@ std::string shorten_text(const std::string &text, size_t max_characters)
 }
 
 std::string build_claude_request(const std::string &transcript, const std::string &today,
-				 const std::string &paused_content)
+				 const std::string &paused_content, int max_searches)
 {
 	// strict keeps the tool's input to this exact shape now that Claude is no
 	// longer forced to call it; strict needs additionalProperties false.
@@ -139,7 +139,8 @@ std::string build_claude_request(const std::string &transcript, const std::strin
 
 	json messages = json::array({{
 		{"role", "user"},
-		{"content", "Today's date: " + today + "\n\n<transcript>\n" + transcript + "\n</transcript>"},
+		{"content", (today.empty() ? std::string() : "Today's date: " + today + "\n\n") + "<transcript>\n" +
+				    transcript + "\n</transcript>"},
 	}});
 	if (!paused_content.empty()) {
 		// Sent back exactly as received, so the API can pick the turn up
@@ -167,7 +168,7 @@ std::string build_claude_request(const std::string &transcript, const std::strin
 			 {
 				 {"type", kSearchToolType},
 				 {"name", "web_search"},
-				 {"max_uses", kClaudeMaxSearches},
+				 {"max_uses", max_searches},
 			 },
 			 {
 				 {"name", kToolName},
@@ -228,13 +229,21 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 			result.web_searches = count_at(*server_tools, "web_search_requests");
 	}
 
-	std::string text; // any plain text Claude wrote outside the tool call
+	std::string text;              // any plain text Claude wrote outside the tool call
+	std::string text_after_search; // the part of it after the last search result
+	bool searched = result.web_searches > 0;
 	for (const json &block : *content) {
 		if (!block.is_object())
 			continue;
 		const std::string type = string_at(block, "type");
 		if (type == "text") {
 			text += string_at(block, "text");
+			text_after_search += string_at(block, "text");
+			continue;
+		}
+		if (type == "web_search_tool_result") {
+			searched = true;
+			text_after_search.clear();
 			continue;
 		}
 		if (type != "tool_use" || string_at(block, "name") != kToolName)
@@ -269,6 +278,14 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 	// instead. That is most often a remark that there is no question ("I
 	// don't see a question"), which must not reach the streamer, so plain
 	// text counts as no question.
+	// After searching, though, plain text is most likely the answer itself,
+	// written with citations the way search results invite, so it is sent
+	// rather than thrown away with the searches it paid for.
+	if (stop_reason == "end_turn" && searched && !trimmed(text_after_search).empty()) {
+		result.answer = shorten_text(trimmed(text_after_search), kMaxAnswerCharacters);
+		result.outcome = ClaudeAnswer::Outcome::answered;
+		return result;
+	}
 	if (stop_reason == "end_turn" && !trimmed(text).empty()) {
 		result.outcome = ClaudeAnswer::Outcome::no_question;
 		return result;

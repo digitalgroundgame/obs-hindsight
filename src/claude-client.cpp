@@ -134,7 +134,13 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 	long long output_tokens = answer.output_tokens;
 	long long web_searches = answer.web_searches;
 	for (int resumes = 0; answer.outcome == ClaudeAnswer::Outcome::paused && resumes < kMaxResumes; resumes++) {
-		answer = send(build_claude_request(transcript, date, answer.paused_content), api_key, cancel);
+		// max_uses counts per request, so pass on only the searches left.
+		const long long searches_left = kClaudeMaxSearches - web_searches;
+		if (searches_left <= 0)
+			break;
+		answer = send(build_claude_request(transcript, date, answer.paused_content,
+						   static_cast<int>(searches_left)),
+			      api_key, cancel);
 		input_tokens += answer.input_tokens;
 		output_tokens += answer.output_tokens;
 		web_searches += answer.web_searches;

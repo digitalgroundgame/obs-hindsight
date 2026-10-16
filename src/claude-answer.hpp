@@ -55,8 +55,10 @@ constexpr size_t kMaxAnswerCharacters = 1700;
 //
 // paused_content resumes a turn the API paused (ClaudeAnswer::paused_content):
 // it goes back as the assistant's message, unchanged, and Claude carries on.
+// max_uses applies per request, so a resumed turn passes the searches it has
+// left as max_searches.
 std::string build_claude_request(const std::string &transcript, const std::string &today,
-				 const std::string &paused_content = {});
+				 const std::string &paused_content = {}, int max_searches = kClaudeMaxSearches);
 
 // The key is not scoped to a workspace, so the API wants an
 // anthropic-workspace-id header. The streamer needs a workspace key instead.
@@ -71,7 +73,7 @@ inline constexpr const char *kWebSearchDisabledError = "web_search_disabled";
 
 struct ClaudeAnswer {
 	enum class Outcome {
-		answered,    // question and answer are set
+		answered,    // answer is set; question too, unless Claude answered in plain text
 		no_question, // no clear question, or a plain-text reply; send nothing
 		paused,      // the API paused a long search turn; resume with paused_content
 		failed,      // see error_type and error_message

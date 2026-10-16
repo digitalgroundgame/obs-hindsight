@@ -66,6 +66,10 @@ void request_thinks_offers_the_tools_and_carries_the_transcript()
 	const std::string content = request["messages"][0]["content"];
 	CHECK(content.find("what year did \"the wall\" fall") != std::string::npos);
 	CHECK(content.find("Today's date: 2026-10-16") != std::string::npos);
+
+	// With no date to give, the line is left out rather than left blank.
+	const json undated = json::parse(build_claude_request("hi", ""));
+	CHECK(undated["messages"][0]["content"].get<std::string>().find("Today's date") == std::string::npos);
 	CHECK(request["system"].get<std::string>().find("1,700") != std::string::npos);
 }
 
@@ -124,6 +128,19 @@ void skips_web_search_blocks()
 	CHECK(answer.web_searches == 2);
 }
 
+void plain_text_after_searching_is_the_answer()
+{
+	// Claude searched, then answered in plain text with citations instead of
+	// calling the tool. The text after the last search result is the answer.
+	const ClaudeAnswer answer = parse_claude_response(
+		200,
+		R"({"stop_reason":"end_turn","content":[{"type":"text","text":"Let me look that up."},{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{"query":"q"}},{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[]},{"type":"text","text":"The Lakers won 112-108.","citations":[{"type":"web_search_result_location","url":"https://example.com"}]},{"type":"text","text":" Sources: AP"}],"usage":{"input_tokens":10,"output_tokens":20,"server_tool_use":{"web_search_requests":1}}})");
+	CHECK(answer.outcome == ClaudeAnswer::Outcome::answered);
+	CHECK(answer.question.empty());
+	CHECK(answer.answer == "The Lakers won 112-108. Sources: AP");
+	CHECK(answer.web_searches == 1);
+}
+
 void pause_turn_resumes_with_the_content()
 {
 	const std::string paused_reply =
@@ -138,6 +155,10 @@ void pause_turn_resumes_with_the_content()
 	CHECK(request["messages"].size() == 2);
 	CHECK(request["messages"][1]["role"] == "assistant");
 	CHECK(request["messages"][1]["content"] == json::parse(paused_reply)["content"]);
+
+	// A resumed turn gets only the searches it has left.
+	CHECK(json::parse(build_claude_request("who won", "2026-10-16", paused.paused_content,
+					       2))["tools"][0]["max_uses"] == 2);
 
 	// Content that is not a JSON array is left out rather than sent.
 	CHECK(json::parse(build_claude_request("who won", "2026-10-16", "oops"))["messages"].size() == 1);
@@ -258,6 +279,7 @@ int main()
 		reads_the_question_and_answer();
 		skips_thinking_blocks();
 		skips_web_search_blocks();
+		plain_text_after_searching_is_the_answer();
 		pause_turn_resumes_with_the_content();
 		plain_text_reply_sends_nothing();
 		reads_the_usage_and_cost();

@@ -96,7 +96,8 @@ void answer(const Clip &clip)
 	const ClaudeAnswer reply = ask_claude(transcript.text, api_key, stopping);
 	switch (reply.outcome) {
 	case ClaudeAnswer::Outcome::answered:
-		obs_log(LOG_INFO, "question: %s", reply.question.c_str());
+		obs_log(LOG_INFO, "question: %s",
+			reply.question.empty() ? "(Claude answered without restating it)" : reply.question.c_str());
 		obs_log(LOG_INFO,
 			"answer (Claude took %.1f s, %.1f s in all; cost $%.5f for %lld in, %lld out tokens, %lld web searches): %s",
 			seconds_since(asked), seconds_since(start),
@@ -123,6 +124,13 @@ void answer(const Clip &clip)
 		else if (reply.error_type != "cancelled")
 			obs_log(LOG_WARNING, "answering stopped: the Claude request failed (%s) %s",
 				reply.error_type.c_str(), reply.error_message.c_str());
+		// A request that failed after Claude started (say, cut off after
+		// searching) was still billed.
+		if (reply.input_tokens > 0 || reply.output_tokens > 0 || reply.web_searches > 0)
+			obs_log(LOG_INFO,
+				"that request still cost $%.5f for %lld in, %lld out tokens, %lld web searches",
+				claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches),
+				reply.input_tokens, reply.output_tokens, reply.web_searches);
 		break;
 	}
 }
