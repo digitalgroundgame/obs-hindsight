@@ -49,9 +49,11 @@ checksum listed on the release page.
 
 ### Updating and uninstalling
 
-To update, run the newer installer the same way. It replaces the old version
-and keeps your settings and keys. If OBS is open, the installer offers to
-close it.
+On Windows, the easiest way to update is the **Update now** button in the
+Hindsight filter's settings (see [Update notices](#update-notices)). You can
+also run the newer installer the same way as the first one. Either way it
+replaces the old version and keeps your settings and keys. If OBS is open, the
+installer offers to close it.
 
 To uninstall, open Windows **Settings > Apps > Installed apps**, find
 **Hindsight for OBS**, and choose **Uninstall**.
@@ -91,9 +93,18 @@ OBS log. It does not message Discord yet.
 ## Update notices
 
 Each time OBS starts, Hindsight asks GitHub once for the latest release. If a
-newer one is out, the top of the Hindsight filter's settings says so, with a
-**Download the update** button, and the OBS log notes it. If GitHub cannot be
-reached, Hindsight carries on without a notice.
+newer one is out, the top of the Hindsight filter's settings says so and the
+OBS log notes it. If GitHub cannot be reached, Hindsight carries on without a
+notice.
+
+On Windows the notice has an **Update now** button. It downloads the new
+installer, checks its SHA-256 against the one GitHub lists for the release, and
+opens it. From there it is the usual install: click **Yes** on the Windows
+prompt, then **Install**. The installer closes OBS for you, and its last page
+offers to start OBS again. The button waits while you are streaming or
+recording, since the update closes OBS. If the download or the check fails, the
+notice says so and offers the release page instead. On other systems the notice
+has a **Download the update** button that opens the release page.
 
 ### What the update check sends
 
@@ -102,6 +113,8 @@ One HTTPS GET to
 with `User-Agent: obs-hindsight/<version>` (GitHub requires one) and an
 `Accept` header asking for JSON. Nothing else: no keys, no audio, no details
 about you or your PC. Like any web request, it shows GitHub your IP address.
+**Update now** adds one more HTTPS download, of the installer file itself, only
+when you click it.
 
 ### Turning it off
 

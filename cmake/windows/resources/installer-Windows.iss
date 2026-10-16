@@ -100,3 +100,24 @@ Type: filesandordirs; Name: "{app}\data"
 Source: "{#Branding}setup-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 #endif
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Run]
+; Hindsight's Update now button starts Setup with /OBS="<path to obs64.exe>",
+; the OBS it is running in, so the last page can offer to start OBS again.
+; Setup runs as admin, so start OBS as the streamer instead.
+Filename: "{param:OBS|}"; WorkingDir: "{code:ObsFolder}"; Description: "Start OBS Studio"; Flags: postinstall nowait runasoriginaluser skipifsilent; Check: ObsGiven
+
+[Code]
+function ObsGiven: Boolean;
+var
+  Obs: String;
+begin
+  Obs := ExpandConstant('{param:OBS|}');
+  Result := (Obs <> '') and (CompareText(ExtractFileName(Obs), 'obs64.exe') = 0) and FileExists(Obs);
+end;
+
+// OBS looks for its files relative to the folder it starts in.
+function ObsFolder(Param: String): String;
+begin
+  Result := ExtractFileDir(ExpandConstant('{param:OBS|}'));
+end;

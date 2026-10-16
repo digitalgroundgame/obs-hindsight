@@ -27,6 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "speech-model.hpp"
 #include "transcriber.hpp"
 #include "update-check.hpp"
+#include "update-install.hpp"
 
 #include <curl/curl.h>
 
@@ -62,6 +63,7 @@ bool obs_module_load(void)
 
 void obs_module_unload(void)
 {
+	update_install_stop();
 	update_check_stop();
 	speech_model_stop();
 	answer_pipeline_stop();

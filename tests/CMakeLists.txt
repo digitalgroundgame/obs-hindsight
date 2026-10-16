@@ -93,6 +93,8 @@ set(
   private-file-test
   secret-seal-test
   secrets-test
+  sha256-test
+  update-asset-test
   version-check-test
   wav-test
 )

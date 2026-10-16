@@ -60,6 +60,8 @@ target_sources(
     src/transcriber.hpp
     src/update-check.cpp
     src/update-check.hpp
+    src/update-install.cpp
+    src/update-install.hpp
     ${HINDSIGHT_CORE_SOURCES}
     src/claude-client.cpp
     src/claude-client.hpp
@@ -73,7 +75,8 @@ if(NOT APPLE)
 endif()
 
 # DPAPI, which secret-seal.cpp uses to encrypt the saved keys, and BCrypt,
-# which file-sha1.cpp uses to check the speech model download.
+# which file-sha1.cpp uses to check the speech model download and sha256.cpp
+# uses to check a downloaded update.
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32 bcrypt)
 endif()
