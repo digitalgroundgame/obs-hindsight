@@ -87,7 +87,7 @@ WizardSmallImageFile={#Branding}wizard-small-image*.bmp
 ReadyLabel1=Setup is ready to install [name/ver] into OBS Studio.
 ReadyLabel2a=Close OBS before you click Install. If it is open, Setup will offer to close it.
 ReadyLabel2b=Close OBS before you click Install. If it is open, Setup will offer to close it.
-FinishedLabel=Setup has installed [name] into OBS Studio. Start OBS and add the Hindsight filter to your microphone.
+FinishedLabel=Setup has installed [name] into OBS Studio. The setup guide shows how to add Hindsight to your microphone.
 
 [InstallDelete]
 ; Clear the previous version's files first so nothing stale is left behind.
@@ -102,13 +102,21 @@ Source: "{#Branding}setup-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Run]
-; Hindsight's Update now button starts Setup with /OBS="<path to obs64.exe>",
-; the OBS it is running in, so the last page can offer to start OBS again.
-; Setup runs as admin, so start OBS as the streamer instead.
-Filename: "{param:OBS|}"; WorkingDir: "{code:ObsFolder}"; Description: "Start OBS Studio"; Flags: postinstall nowait runasoriginaluser skipifsilent; Check: ObsGiven
+; Two optional steps on the last page, ticked by default. Setup runs as admin,
+; so both run as the streamer instead.
+; Start OBS again (Setup closes it to update). Hindsight's Update now button
+; passes the OBS it runs in as /OBS="<path to obs64.exe>"; otherwise Setup
+; finds OBS where its own installer recorded it.
+Filename: "{code:ObsExe}"; WorkingDir: "{code:ObsFolder}"; Description: "Start OBS Studio"; Flags: postinstall nowait runasoriginaluser skipifsilent; Check: ObsFound
+; The setup guide in the README. Left unticked for an update from inside OBS,
+; since that streamer has set Hindsight up already. If the README heading
+; changes, change this link too.
+Filename: "{#Website}#trying-the-current-build"; Description: "Open the setup guide (how to add Hindsight to your mic)"; Flags: postinstall shellexec nowait runasoriginaluser skipifsilent; Check: not UpdatingFromObs
+Filename: "{#Website}#trying-the-current-build"; Description: "Open the setup guide (how to add Hindsight to your mic)"; Flags: postinstall shellexec nowait runasoriginaluser skipifsilent unchecked; Check: UpdatingFromObs
 
 [Code]
-function ObsGiven: Boolean;
+// Whether Hindsight's Update now button started Setup, passing /OBS=.
+function UpdatingFromObs: Boolean;
 var
   Obs: String;
 begin
@@ -116,8 +124,27 @@ begin
   Result := (Obs <> '') and (CompareText(ExtractFileName(Obs), 'obs64.exe') = 0) and FileExists(Obs);
 end;
 
+// obs64.exe, or '' if OBS can't be found. The OBS installer records its
+// folder as the default value of HKLM\SOFTWARE\OBS Studio.
+function ObsExe(Param: String): String;
+var
+  Folder: String;
+begin
+  Result := '';
+  if UpdatingFromObs then
+    Result := ExpandConstant('{param:OBS|}')
+  else if RegQueryStringValue(HKLM, 'SOFTWARE\OBS Studio', '', Folder) and
+          FileExists(AddBackslash(Folder) + 'bin\64bit\obs64.exe') then
+    Result := AddBackslash(Folder) + 'bin\64bit\obs64.exe';
+end;
+
+function ObsFound: Boolean;
+begin
+  Result := ObsExe('') <> '';
+end;
+
 // OBS looks for its files relative to the folder it starts in.
 function ObsFolder(Param: String): String;
 begin
-  Result := ExtractFileDir(ExpandConstant('{param:OBS|}'));
+  Result := ExtractFileDir(ObsExe(''));
 end;
