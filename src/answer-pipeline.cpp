@@ -60,7 +60,7 @@ const char *transcript_problem(Transcript::Outcome outcome)
 		return "the speech model is still downloading (or failed to; see above). Try again in a minute";
 	case Transcript::Outcome::unsupported:
 		return "this PC can't run the transcriber (it needs a CPU with AVX2, on Windows or Linux)";
-	case Transcript::Outcome::busy:
+	case Transcript::Outcome::busy: // safety net; the pipeline runs one clip at a time
 		return "still transcribing the last clip";
 	case Transcript::Outcome::cancelled:
 		return "cancelled";
@@ -161,7 +161,14 @@ void answer_pipeline_ask(std::vector<float> samples, uint32_t sample_rate)
 {
 	{
 		std::lock_guard<std::mutex> guard(lock);
-		if (!worker.joinable() || stopping.load())
+		if (stopping.load())
+			return;
+		if (!worker.joinable()) {
+			obs_log(LOG_WARNING,
+				"can't answer: Hindsight didn't finish starting; see the log from OBS startup");
+			return;
+		}
+		if (sample_rate == 0 || samples.empty())
 			return;
 		if (busy || waiting) {
 			obs_log(LOG_WARNING,
