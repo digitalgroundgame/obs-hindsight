@@ -25,6 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include <QCheckBox>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -32,9 +33,13 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace {
+
+// Where a streamer signs in with Discord to get their Hindsight code.
+constexpr const char *kGetCodeUrl = "https://stream-widgets.digitalgroundgame.org/hindsight";
 
 // One key's row: a password box that starts empty (saved keys are never
 // shown) and a button to forget the saved key.
@@ -50,16 +55,19 @@ void show_saved_state(const KeyRow &row, bool saved)
 	row.forget->setEnabled(saved);
 }
 
-KeyRow add_key_row(QFormLayout *form, const char *label, const char *forget_label, QWidget *parent)
+// extra, if given, goes after the Forget button.
+KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent, QWidget *extra = nullptr)
 {
 	KeyRow row;
 	row.edit = new QLineEdit(parent);
 	row.edit->setEchoMode(QLineEdit::Password);
-	row.forget = new QPushButton(QString::fromUtf8(obs_module_text(forget_label)), parent);
+	row.forget = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.Forget")), parent);
 
 	auto *line = new QHBoxLayout();
 	line->addWidget(row.edit, 1);
 	line->addWidget(row.forget);
+	if (extra)
+		line->addWidget(extra);
 	form->addRow(QString::fromUtf8(obs_module_text(label)), line);
 	return row;
 }
@@ -78,12 +86,15 @@ void open_settings_dialog(void *)
 
 	auto *form = new QFormLayout();
 	layout->addLayout(form);
-	const KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", "Hindsight.Forget", &dialog);
-	const KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", "Hindsight.Forget", &dialog);
+	const KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", &dialog);
+	auto *get_code = new QPushButton(QString::fromUtf8(obs_module_text("Hindsight.GetCode")), &dialog);
+	const KeyRow code = add_key_row(form, "Hindsight.HindsightCode", &dialog, get_code);
+	QObject::connect(get_code, &QPushButton::clicked, &dialog,
+			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetCodeUrl))); });
 
 	const Secrets saved = secret_store_get();
 	show_saved_state(claude, !saved.claude_api_key.empty());
-	show_saved_state(discord, !saved.discord_bot_token.empty());
+	show_saved_state(code, !saved.hindsight_code.empty());
 
 	QObject::connect(claude.forget, &QPushButton::clicked, &dialog, [claude]() {
 		if (secret_store_forget(SecretKey::ClaudeApiKey)) {
@@ -91,10 +102,10 @@ void open_settings_dialog(void *)
 			show_saved_state(claude, false);
 		}
 	});
-	QObject::connect(discord.forget, &QPushButton::clicked, &dialog, [discord]() {
-		if (secret_store_forget(SecretKey::DiscordBotToken)) {
-			discord.edit->clear();
-			show_saved_state(discord, false);
+	QObject::connect(code.forget, &QPushButton::clicked, &dialog, [code]() {
+		if (secret_store_forget(SecretKey::HindsightCode)) {
+			code.edit->clear();
+			show_saved_state(code, false);
 		}
 	});
 
@@ -109,7 +120,7 @@ void open_settings_dialog(void *)
 	check_updates_note->setWordWrap(true);
 	layout->addWidget(check_updates_note);
 
-	auto *error = new QLabel(QString::fromUtf8(obs_module_text("Hindsight.SaveFailed")), &dialog);
+	auto *error = new QLabel(&dialog);
 	error->setWordWrap(true);
 	error->hide();
 	layout->addWidget(error);
@@ -121,17 +132,26 @@ void open_settings_dialog(void *)
 	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
-		typed.discord_bot_token = discord.edit->text().toStdString();
+		typed.hindsight_code = code.edit->text().toStdString();
 		const bool checking = check_updates->isChecked();
+
+		const std::string typed_code = clean_key(typed.hindsight_code);
+		if (!typed_code.empty() && !is_hindsight_code(typed_code)) {
+			error->setText(QString::fromUtf8(obs_module_text("Hindsight.BadCode")));
+			error->show();
+			return;
+		}
 
 		// Blank boxes keep the saved key. On failure the window stays open
 		// so nothing typed is lost.
 		const bool setting_saved = checking == was_checking || plugin_settings_set_check_for_updates(checking);
 		const bool keys_saved = secret_store_save_typed(typed);
-		if (setting_saved && keys_saved)
+		if (setting_saved && keys_saved) {
 			dialog.accept();
-		else
+		} else {
+			error->setText(QString::fromUtf8(obs_module_text("Hindsight.SaveFailed")));
 			error->show();
+		}
 	});
 
 	dialog.exec();

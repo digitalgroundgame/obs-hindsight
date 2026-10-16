@@ -31,6 +31,22 @@ std::string clean_key(const std::string &key)
 	return cleaned;
 }
 
+bool is_hindsight_code(const std::string &code)
+{
+	constexpr size_t kPrefixLength = 3;
+	constexpr size_t kRandomLength = 43; // 32 random bytes in base64url, unpadded
+	if (code.size() != kPrefixLength + kRandomLength || code.compare(0, kPrefixLength, "hs_") != 0)
+		return false;
+	for (size_t i = kPrefixLength; i < code.size(); i++) {
+		const char c = code[i];
+		const bool base64url = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+				       c == '-' || c == '_';
+		if (!base64url)
+			return false;
+	}
+	return true;
+}
+
 namespace {
 
 bool merge_one(std::string &stored, const std::string &typed)
@@ -49,14 +65,14 @@ bool fill_empty_keys(Secrets &stored, const Secrets &old)
 	bool changed = false;
 	if (stored.claude_api_key.empty())
 		changed |= merge_one(stored.claude_api_key, old.claude_api_key);
-	if (stored.discord_bot_token.empty())
-		changed |= merge_one(stored.discord_bot_token, old.discord_bot_token);
+	if (stored.hindsight_code.empty())
+		changed |= merge_one(stored.hindsight_code, old.hindsight_code);
 	return changed;
 }
 
 bool forget_key(Secrets &secrets, SecretKey key)
 {
-	std::string &value = key == SecretKey::ClaudeApiKey ? secrets.claude_api_key : secrets.discord_bot_token;
+	std::string &value = key == SecretKey::ClaudeApiKey ? secrets.claude_api_key : secrets.hindsight_code;
 	const bool had_value = !value.empty();
 	value.clear();
 	return had_value;
@@ -65,6 +81,6 @@ bool forget_key(Secrets &secrets, SecretKey key)
 bool merge_typed_keys(Secrets &stored, const Secrets &typed)
 {
 	const bool claude_changed = merge_one(stored.claude_api_key, typed.claude_api_key);
-	const bool discord_changed = merge_one(stored.discord_bot_token, typed.discord_bot_token);
-	return claude_changed || discord_changed;
+	const bool code_changed = merge_one(stored.hindsight_code, typed.hindsight_code);
+	return claude_changed || code_changed;
 }

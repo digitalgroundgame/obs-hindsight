@@ -40,20 +40,23 @@ std::string encode_secrets(const Secrets &secrets)
 {
 	obs_data_t *data = obs_data_create();
 	obs_data_set_string(data, kClaudeApiKeyName, clean_key(secrets.claude_api_key).c_str());
-	obs_data_set_string(data, kDiscordBotTokenName, clean_key(secrets.discord_bot_token).c_str());
+	obs_data_set_string(data, kHindsightCodeName, clean_key(secrets.hindsight_code).c_str());
 	const char *json = obs_data_get_json(data);
 	std::string text = json ? json : "";
 	obs_data_release(data);
 	return text;
 }
 
-bool decode_secrets(const std::string &text, Secrets &secrets)
+// Sets has_bot_token when the file still holds a Discord bot token from
+// before answers went through the DGG server.
+bool decode_secrets(const std::string &text, Secrets &secrets, bool &has_bot_token)
 {
 	obs_data_t *data = obs_data_create_from_json(text.c_str());
 	if (!data)
 		return false;
 	secrets.claude_api_key = clean_key(obs_data_get_string(data, kClaudeApiKeyName));
-	secrets.discord_bot_token = clean_key(obs_data_get_string(data, kDiscordBotTokenName));
+	secrets.hindsight_code = clean_key(obs_data_get_string(data, kHindsightCodeName));
+	has_bot_token = obs_data_has_user_value(data, kDiscordBotTokenName);
 	obs_data_release(data);
 	return true;
 }
@@ -104,10 +107,11 @@ bool write_secrets(const Secrets &secrets)
 // Reads the keys file into secrets. Returns false, leaving secrets empty, if
 // the file exists but could not be read: locked by antivirus or a sync tool,
 // or encrypted for another Windows account or PC. A missing file is just no
-// saved keys.
-bool read_secrets(Secrets &secrets)
+// saved keys. See decode_secrets for has_bot_token.
+bool read_secrets(Secrets &secrets, bool &has_bot_token)
 {
 	secrets = Secrets();
+	has_bot_token = false;
 	const std::string path = secrets_path();
 	if (path.empty() || !os_file_exists(path.c_str()))
 		return true;
@@ -116,7 +120,7 @@ bool read_secrets(Secrets &secrets)
 	if (!contents)
 		return false;
 	std::string text;
-	const bool ok = open_secrets_text(contents, text) && decode_secrets(text, secrets);
+	const bool ok = open_secrets_text(contents, text) && decode_secrets(text, secrets, has_bot_token);
 	bfree(contents);
 	if (!ok)
 		secrets = Secrets();
@@ -135,7 +139,8 @@ void reread_if_needed()
 	if (!file_unread)
 		return;
 	Secrets loaded;
-	if (read_secrets(loaded)) {
+	bool has_bot_token = false;
+	if (read_secrets(loaded, has_bot_token)) {
 		file_unread = false;
 		store = loaded;
 	}
@@ -146,7 +151,7 @@ void reread_if_needed()
 // store_lock.
 bool replace_secrets(const Secrets &updated)
 {
-	if (file_unread && (updated.claude_api_key.empty() || updated.discord_bot_token.empty()))
+	if (file_unread && (updated.claude_api_key.empty() || updated.hindsight_code.empty()))
 		obs_log(LOG_WARNING,
 			"the saved keys still cannot be read and this Save replaces them; enter any blank key again");
 	if (!write_secrets(updated))
@@ -161,10 +166,20 @@ void secret_store_load()
 {
 	std::lock_guard<std::mutex> guard(store_lock);
 	Secrets loaded;
-	file_unread = !read_secrets(loaded);
+	bool has_bot_token = false;
+	file_unread = !read_secrets(loaded, has_bot_token);
 	if (file_unread)
 		obs_log(LOG_WARNING, "could not read the saved keys; Hindsight tries again before the next Save");
 	store = loaded;
+
+	// Answers now go through the DGG server's bot, so a bot token saved by an
+	// earlier version is no longer needed. Rewriting the file drops it.
+	if (has_bot_token) {
+		if (write_secrets(store))
+			obs_log(LOG_INFO, "erased the Discord bot token saved by an earlier version");
+		else
+			obs_log(LOG_WARNING, "could not erase the Discord bot token saved by an earlier version");
+	}
 }
 
 Secrets secret_store_get()

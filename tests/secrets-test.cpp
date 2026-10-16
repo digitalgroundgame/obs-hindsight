@@ -38,20 +38,20 @@ void merge_takes_typed_keys()
 
 	CHECK(merge_typed_keys(stored, typed));
 	CHECK(stored.claude_api_key == "sk-new");
-	CHECK(stored.discord_bot_token.empty());
+	CHECK(stored.hindsight_code.empty());
 }
 
 void merge_keeps_saved_keys_for_blank_fields()
 {
 	Secrets stored;
 	stored.claude_api_key = "sk-saved";
-	stored.discord_bot_token = "tok-saved";
+	stored.hindsight_code = "hs-saved";
 	Secrets typed;
-	typed.discord_bot_token = "   ";
+	typed.hindsight_code = "   ";
 
 	CHECK(!merge_typed_keys(stored, typed));
 	CHECK(stored.claude_api_key == "sk-saved");
-	CHECK(stored.discord_bot_token == "tok-saved");
+	CHECK(stored.hindsight_code == "hs-saved");
 }
 
 void merge_reports_no_change_for_the_same_key()
@@ -70,11 +70,11 @@ void old_keys_fill_only_empty_slots()
 	stored.claude_api_key = "sk-new";
 	Secrets old;
 	old.claude_api_key = "sk-old";
-	old.discord_bot_token = " tok-old\n";
+	old.hindsight_code = " hs-old\n";
 
 	CHECK(fill_empty_keys(stored, old));
 	CHECK(stored.claude_api_key == "sk-new");
-	CHECK(stored.discord_bot_token == "tok-old");
+	CHECK(stored.hindsight_code == "hs-old");
 
 	// Nothing left to fill.
 	CHECK(!fill_empty_keys(stored, old));
@@ -85,16 +85,32 @@ void forgets_one_key()
 {
 	Secrets secrets;
 	secrets.claude_api_key = "sk-keep";
-	secrets.discord_bot_token = "tok-drop";
+	secrets.hindsight_code = "hs-drop";
 
-	CHECK(forget_key(secrets, SecretKey::DiscordBotToken));
+	CHECK(forget_key(secrets, SecretKey::HindsightCode));
 	CHECK(secrets.claude_api_key == "sk-keep");
-	CHECK(secrets.discord_bot_token.empty());
+	CHECK(secrets.hindsight_code.empty());
 
 	// Forgetting an empty key reports that nothing changed.
-	CHECK(!forget_key(secrets, SecretKey::DiscordBotToken));
+	CHECK(!forget_key(secrets, SecretKey::HindsightCode));
 	CHECK(forget_key(secrets, SecretKey::ClaudeApiKey));
 	CHECK(secrets.claude_api_key.empty());
+}
+
+void recognises_hindsight_codes()
+{
+	const std::string random(43, 'A');
+	CHECK(is_hindsight_code("hs_" + random));
+	CHECK(is_hindsight_code("hs_abcdefghijklmnopqrstuvwxyzABCDEFGHIJK-_0123"));
+
+	CHECK(!is_hindsight_code(""));
+	CHECK(!is_hindsight_code("hs_"));
+	CHECK(!is_hindsight_code("hs_" + random.substr(1))); // pasted one short
+	CHECK(!is_hindsight_code("hs_" + random + "A"));
+	CHECK(!is_hindsight_code("HS_" + random));
+	CHECK(!is_hindsight_code("sk_" + random)); // the wrong key in the box
+	CHECK(!is_hindsight_code("hs_" + random.substr(1) + "="));
+	CHECK(!is_hindsight_code("hs_" + random.substr(1) + "+"));
 }
 
 } // namespace
@@ -107,5 +123,6 @@ int main()
 	merge_reports_no_change_for_the_same_key();
 	old_keys_fill_only_empty_slots();
 	forgets_one_key();
+	recognises_hindsight_codes();
 	return check::finish();
 }
