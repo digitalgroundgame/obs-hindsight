@@ -295,3 +295,11 @@ jobs:
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64*.*
+
+      # Starts OBS with the built plugin installed, so a missing DLL or a
+      # crash on load fails the PR instead of reaching streamers.
+      - name: Check Plugin Loads in OBS 🎬
+        run: |
+          # Check Plugin Loads in OBS 🎬
+          $PluginZip = "${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64.zip"
+          .github/scripts/Test-Load-Windows.ps1 -PluginZip $PluginZip
