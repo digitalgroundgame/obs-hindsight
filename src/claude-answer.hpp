@@ -30,13 +30,20 @@ constexpr const char *kClaudeModel = "claude-haiku-5-5";
 constexpr const char *kClaudeMessagesUrl = "https://api.anthropic.com/v1/messages";
 constexpr const char *kClaudeApiVersion = "2023-06-01";
 
+// How hard Claude thinks before answering, with adaptive thinking on.
+// "medium" is Haiku's default; higher means better answers and a longer wait.
+constexpr const char *kClaudeEffort = "medium";
+// The most tokens Claude may write, thinking included. An answer is at most a
+// few hundred; the rest is room to think.
+constexpr int kClaudeMaxTokens = 4096;
+
 // The longest answer Claude is asked for. The DGG server cuts anything
 // longer, so this keeps answers whole.
 constexpr size_t kMaxAnswerCharacters = 1700;
 
 // The JSON body for POST /v1/messages: the transcript of the last few seconds
-// of the streamer's mic, and a tool Claude must call with the question it
-// found and its answer.
+// of the streamer's mic, and a tool Claude is told to call with the question
+// it found and its answer. Claude thinks first (adaptive thinking).
 std::string build_claude_request(const std::string &transcript);
 
 // The key is not scoped to a workspace, so the API wants an
@@ -47,7 +54,7 @@ inline constexpr const char *kWorkspaceKeyError = "workspace_key";
 struct ClaudeAnswer {
 	enum class Outcome {
 		answered,    // question and answer are set
-		no_question, // Claude found no clear question; send nothing
+		no_question, // no clear question, or a plain-text reply; send nothing
 		failed,      // see error_type and error_message
 	};
 	Outcome outcome = Outcome::failed;
@@ -62,6 +69,7 @@ struct ClaudeAnswer {
 	std::string error_message;
 
 	// Tokens the request was billed for, from the reply's usage (0 if absent).
+	// output_tokens includes Claude's thinking.
 	long long input_tokens = 0;
 	long long output_tokens = 0;
 };

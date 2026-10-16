@@ -35,7 +35,7 @@ const char *const kSystemPrompt =
 	"- Keep the answer under 1,700 characters.\n"
 	"- If you are not sure of a fact, say so rather than guess.\n\n"
 	"If there is no clear question, leave both fields empty. Never invent a question.\n\n"
-	"Always reply by calling the send_answer tool.";
+	"Always reply by calling the send_answer tool, even when there is no question. Never answer in plain text.";
 
 std::string trimmed(const std::string &text)
 {
@@ -100,6 +100,8 @@ std::string shorten_text(const std::string &text, size_t max_characters)
 
 std::string build_claude_request(const std::string &transcript)
 {
+	// strict keeps the tool's input to this exact shape now that Claude is no
+	// longer forced to call it; strict needs additionalProperties false.
 	const json input_schema = {
 		{"type", "object"},
 		{"properties",
@@ -114,18 +116,27 @@ std::string build_claude_request(const std::string &transcript)
 			    "Your answer to that question, in plain text. Empty if there is no question."}}},
 		 }},
 		{"required", {"question", "answer"}},
+		{"additionalProperties", false},
 	};
 
 	const json request = {
 		{"model", kClaudeModel},
-		{"max_tokens", 1024},
+		// Thinking counts toward max_tokens, so leave room for it on top of
+		// the answer.
+		{"max_tokens", kClaudeMaxTokens},
+		// Claude decides how long to think; medium effort keeps the wait
+		// short. A forced tool call would skip thinking, so tool_choice is
+		// auto and the system prompt tells Claude to call the tool.
+		{"thinking", {{"type", "adaptive"}}},
+		{"output_config", {{"effort", kClaudeEffort}}},
 		{"system", kSystemPrompt},
 		{"tools", json::array({{
 				  {"name", kToolName},
 				  {"description", "Send the question you found and your answer to the streamer."},
 				  {"input_schema", input_schema},
+				  {"strict", true},
 			  }})},
-		{"tool_choice", {{"type", "tool"}, {"name", kToolName}}},
+		{"tool_choice", {{"type", "auto"}}},
 		{"messages", json::array({{
 				     {"role", "user"},
 				     {"content", "<transcript>\n" + transcript + "\n</transcript>"},
@@ -164,20 +175,30 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 	if (content == reply.end() || !content->is_array())
 		return failure("bad_response");
 
+	ClaudeAnswer result;
+	// usage.output_tokens includes the thinking tokens, which are billed as
+	// output, so the cost covers them.
+	const auto usage = reply.find("usage");
+	if (usage != reply.end() && usage->is_object()) {
+		result.input_tokens = count_at(*usage, "input_tokens");
+		result.output_tokens = count_at(*usage, "output_tokens");
+	}
+
+	std::string text; // any plain text Claude wrote outside the tool call
 	for (const json &block : *content) {
-		if (!block.is_object() || string_at(block, "type") != "tool_use" ||
-		    string_at(block, "name") != kToolName)
+		if (!block.is_object())
 			continue;
+		const std::string type = string_at(block, "type");
+		if (type == "text") {
+			text += string_at(block, "text");
+			continue;
+		}
+		if (type != "tool_use" || string_at(block, "name") != kToolName)
+			continue; // thinking blocks, among others
 		const auto input = block.find("input");
 		if (input == block.end() || !input->is_object())
 			return failure("bad_response");
 
-		ClaudeAnswer result;
-		const auto usage = reply.find("usage");
-		if (usage != reply.end() && usage->is_object()) {
-			result.input_tokens = count_at(*usage, "input_tokens");
-			result.output_tokens = count_at(*usage, "output_tokens");
-		}
 		result.question = trimmed(string_at(*input, "question"));
 		result.answer = shorten_text(trimmed(string_at(*input, "answer")), kMaxAnswerCharacters);
 		// A question with no answer (or the reverse) has nothing to send.
@@ -190,6 +211,19 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 		}
 		return result;
 	}
-	// Claude stopped before calling the tool, say at max_tokens.
-	return failure("bad_response", "stop_reason " + string_at(reply, "stop_reason"));
+
+	const std::string stop_reason = string_at(reply, "stop_reason");
+	// Now that the call is not forced, Claude may reply in plain text
+	// instead. That is most often a remark that there is no question ("I
+	// don't see a question"), which must not reach the streamer, so plain
+	// text counts as no question.
+	if (stop_reason == "end_turn" && !trimmed(text).empty()) {
+		result.outcome = ClaudeAnswer::Outcome::no_question;
+		return result;
+	}
+	// Claude stopped before answering, say at max_tokens or with a refusal.
+	ClaudeAnswer failed = failure("bad_response", "stop_reason " + stop_reason);
+	failed.input_tokens = result.input_tokens;
+	failed.output_tokens = result.output_tokens;
+	return failed;
 }
