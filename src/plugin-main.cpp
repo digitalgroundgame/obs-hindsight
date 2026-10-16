@@ -23,7 +23,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
 #include "settings-dialog.hpp"
+#include "speech-model.hpp"
+#include "transcriber.hpp"
 #include "update-check.hpp"
+
+#include <curl/curl.h>
+
+namespace {
+bool curl_ready = false;
+}
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -34,6 +42,15 @@ bool obs_module_load(void)
 	register_hindsight_filter();
 	register_settings_dialog();
 	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
+
+	// curl_global_init is not safe to race with other threads, so it runs
+	// here on the thread that loads the module, before any worker starts.
+	curl_ready = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
+	if (!curl_ready) {
+		obs_log(LOG_WARNING, "curl failed to start; no update check or speech model download");
+		return true;
+	}
+	speech_model_start();
 	if (plugin_settings_check_for_updates())
 		update_check_start();
 	else
@@ -44,5 +61,10 @@ bool obs_module_load(void)
 void obs_module_unload(void)
 {
 	update_check_stop();
+	speech_model_stop();
+	transcriber_unload();
+	if (curl_ready)
+		curl_global_cleanup();
+	curl_ready = false;
 	obs_log(LOG_INFO, "plugin unloaded");
 }

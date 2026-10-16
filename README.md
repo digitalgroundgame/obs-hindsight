@@ -19,6 +19,12 @@ Windows, OBS 31.1 or newer:
 4. Start OBS. **Help > Log Files > View Current Log** should contain
    `[obs-hindsight] plugin loaded successfully`.
 
+The first time OBS starts with Hindsight, it downloads the speech model (about
+142 MB) from Hugging Face in the background. Speech is transcribed on your PC
+with [whisper.cpp](https://github.com/ggml-org/whisper.cpp); your audio is
+never uploaded. Transcription needs a CPU from about 2015 or newer (one with
+AVX2).
+
 ### Windows warnings you will see
 
 The installer is not code-signed yet, so Windows does not know who made it and

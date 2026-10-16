@@ -44,7 +44,6 @@ constexpr std::size_t kMaxResponseBytes = 1024 * 1024;
 
 std::thread worker;
 std::atomic<bool> stopping{false};
-bool curl_ready = false;
 
 std::mutex result_lock;
 std::string newer_version; // guarded by result_lock
@@ -139,13 +138,6 @@ void update_check_start()
 {
 	if (worker.joinable())
 		return;
-	// curl_global_init is not safe to race with other threads, so do it here
-	// on the thread that loads the module, before the worker starts.
-	curl_ready = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
-	if (!curl_ready) {
-		obs_log(LOG_WARNING, "update check skipped: curl failed to start");
-		return;
-	}
 	// Without an asynchronous resolver, curl looks up names in one blocking
 	// call that ignores our timeouts (CURLOPT_NOSIGNAL turns off the alarm it
 	// would use) and never calls on_progress. A slow DNS server could then
@@ -164,10 +156,6 @@ void update_check_stop()
 	stopping = true;
 	if (worker.joinable())
 		worker.join();
-	if (curl_ready) {
-		curl_global_cleanup();
-		curl_ready = false;
-	}
 }
 
 std::string update_check_newer_version()
