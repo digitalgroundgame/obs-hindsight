@@ -38,6 +38,14 @@ Discord yet; it proves the audio capture.
 5. **Help > Log Files > View Current Log** shows where the WAV was saved. Play
    it back: it should be the last 30 seconds of your mic.
 
+## Update notices
+
+Each time OBS starts, Hindsight asks GitHub once for the latest release. If a
+newer one is out, the top of the Hindsight filter's settings says so, with a
+**Download the update** button, and the OBS log notes it. The request goes to
+`api.github.com` and carries only the plugin version. If GitHub cannot be
+reached, Hindsight carries on without a notice.
+
 ## Building
 
 This repo is based on the official
@@ -59,8 +67,8 @@ Every pull request runs these on GitHub Actions:
 
 - **Builds** on Windows, macOS and Ubuntu with warnings treated as errors.
 - **Formatting** with clang-format (C/C++) and gersemi (CMake).
-- **Unit tests** for the code that does not need OBS (the audio buffer and the
-  WAV encoder), once plain and once under AddressSanitizer and
+- **Unit tests** for the code that does not need OBS (the audio buffer, the
+  WAV encoder and the version comparison), once plain and once under AddressSanitizer and
   UndefinedBehaviorSanitizer, which catch memory bugs and undefined behavior.
 - **clang-tidy**, with the bug-finding rules listed in [.clang-tidy](.clang-tidy).
 
