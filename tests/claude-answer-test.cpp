@@ -44,14 +44,19 @@ std::string tool_reply(const std::string &question, const std::string &answer)
 	return reply.dump();
 }
 
-void request_forces_the_tool_and_carries_the_transcript()
+void request_thinks_offers_the_tool_and_carries_the_transcript()
 {
 	const json request = json::parse(build_claude_request("what year did \"the wall\" fall\n"));
 
 	CHECK(request["model"] == kClaudeModel);
-	CHECK(request["tool_choice"]["type"] == "tool");
-	CHECK(request["tool_choice"]["name"] == "send_answer");
+	CHECK(request["max_tokens"] == kClaudeMaxTokens);
+	CHECK(request["thinking"]["type"] == "adaptive");
+	CHECK(request["output_config"]["effort"] == kClaudeEffort);
+	// A forced tool call would skip thinking, so Claude chooses to call it.
+	CHECK(request["tool_choice"]["type"] == "auto");
 	CHECK(request["tools"][0]["name"] == "send_answer");
+	CHECK(request["tools"][0]["strict"] == true);
+	CHECK(request["tools"][0]["input_schema"]["additionalProperties"] == false);
 	CHECK(request["messages"].size() == 1);
 	CHECK(request["messages"][0]["role"] == "user");
 	const std::string content = request["messages"][0]["content"];
@@ -72,6 +77,40 @@ void reads_the_question_and_answer()
 	CHECK(answer.outcome == ClaudeAnswer::Outcome::answered);
 	CHECK(answer.question == "What year?");
 	CHECK(answer.answer == "1989, on November 9.");
+}
+
+void skips_thinking_blocks()
+{
+	const ClaudeAnswer answer = parse_claude_response(
+		200,
+		R"({"stop_reason":"tool_use","content":[{"type":"thinking","thinking":"","signature":"abc"},{"type":"tool_use","name":"send_answer","input":{"question":"Q?","answer":"A."}}]})");
+	CHECK(answer.outcome == ClaudeAnswer::Outcome::answered);
+	CHECK(answer.question == "Q?");
+	CHECK(answer.answer == "A.");
+}
+
+void plain_text_reply_is_the_answer()
+{
+	// Claude answered without calling the tool: the text is sent, with no question.
+	const ClaudeAnswer answer = parse_claude_response(
+		200,
+		R"({"stop_reason":"end_turn","content":[{"type":"thinking","thinking":"","signature":"abc"},{"type":"text","text":" 1989, "},{"type":"text","text":"on November 9.\n"}],"usage":{"input_tokens":10,"output_tokens":20}})");
+	CHECK(answer.outcome == ClaudeAnswer::Outcome::answered);
+	CHECK(answer.question.empty());
+	CHECK(answer.answer == "1989, on November 9.");
+	CHECK(answer.output_tokens == 20);
+
+	const std::string long_text(kMaxAnswerCharacters + 10, 'a');
+	const ClaudeAnswer long_answer = parse_claude_response(
+		200,
+		json({{"stop_reason", "end_turn"}, {"content", {{{"type", "text"}, {"text", long_text}}}}}).dump());
+	CHECK(long_answer.answer.size() == kMaxAnswerCharacters - 1 + 3);
+
+	// Only thinking and no text has nothing to send.
+	const ClaudeAnswer silent = parse_claude_response(
+		200, R"({"stop_reason":"end_turn","content":[{"type":"thinking","thinking":"","signature":"abc"}]})");
+	CHECK(silent.outcome == ClaudeAnswer::Outcome::failed);
+	CHECK(silent.error_type == "bad_response");
 }
 
 void reads_the_usage_and_cost()
@@ -131,11 +170,19 @@ void rejects_replies_it_cannot_read()
 	CHECK(parse_claude_response(200, "[]").error_type == "bad_response");
 	CHECK(parse_claude_response(200, R"({"content":"text"})").error_type == "bad_response");
 
-	// Claude ran out of tokens before calling the tool.
+	// Claude ran out of tokens before calling the tool; half a text answer is
+	// not sent, but what it cost still is reported.
 	const ClaudeAnswer cut_off = parse_claude_response(
-		200, R"({"stop_reason":"max_tokens","content":[{"type":"text","text":"Let me think"}]})");
+		200,
+		R"({"stop_reason":"max_tokens","content":[{"type":"text","text":"Let me think"}],"usage":{"input_tokens":5,"output_tokens":4096}})");
 	CHECK(cut_off.outcome == ClaudeAnswer::Outcome::failed);
 	CHECK(cut_off.error_type == "bad_response");
+	CHECK(cut_off.error_message == "stop_reason max_tokens");
+	CHECK(cut_off.output_tokens == 4096);
+
+	const ClaudeAnswer refused = parse_claude_response(
+		200, R"({"stop_reason":"refusal","content":[{"type":"text","text":"I can't help with that."}]})");
+	CHECK(refused.outcome == ClaudeAnswer::Outcome::failed);
 
 	// Wrong types inside the tool input are treated as empty, not thrown on.
 	const ClaudeAnswer odd = parse_claude_response(
@@ -168,9 +215,11 @@ int main()
 {
 	// The tests build JSON with nlohmann/json, which throws on misuse.
 	try {
-		request_forces_the_tool_and_carries_the_transcript();
+		request_thinks_offers_the_tool_and_carries_the_transcript();
 		request_survives_bad_utf8();
 		reads_the_question_and_answer();
+		skips_thinking_blocks();
+		plain_text_reply_is_the_answer();
 		reads_the_usage_and_cost();
 		empty_fields_mean_no_question();
 		reads_api_errors();
