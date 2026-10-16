@@ -15,3 +15,6 @@ For sharper art on high-DPI screens, add larger copies next to them, for
 example `wizard-image-2x.bmp` (328 × 628) and `wizard-small-image-2x.bmp`
 (110 × 110). The installer picks them up through the `*` wildcard and Windows
 uses the best fit for the screen.
+
+The current files come from the official square DGG logo (1024 × 1024).
+The tall banners show it centered on its own blue (#1144FF).
