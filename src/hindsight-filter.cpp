@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "hindsight-filter.hpp"
+#include "answer-pipeline.hpp"
 #include "audio-freshness.hpp"
 #include "audio-ring.hpp"
 #include "clip-file.hpp"
@@ -163,8 +164,8 @@ void write_clip(void *param)
 	delete job;
 }
 
-// What the hotkey will eventually do end to end. For the spike it saves the
-// buffered audio so we can listen to exactly what would be transcribed.
+// What the hotkey does: hands the clip to the answer pipeline, and saves it
+// as a WAV so we can listen to exactly what was transcribed.
 void capture(HindsightFilter *filter)
 {
 	// Each clip holds up to 30 s of audio (about 6 MB), so don't let them
@@ -182,6 +183,8 @@ void capture(HindsightFilter *filter)
 			filter->window_seconds.load());
 		return;
 	}
+
+	answer_pipeline_ask(samples, filter->sample_rate);
 
 	// Named for when the hotkey was pressed, the way OBS names recordings.
 	char *name = os_generate_formatted_filename(nullptr, false, "hindsight-%CCYY%MM%DD-%hh%mm%ss");

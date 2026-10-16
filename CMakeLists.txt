@@ -44,6 +44,8 @@ target_sources(
   ${CMAKE_PROJECT_NAME}
   PRIVATE
     src/plugin-main.cpp
+    src/answer-pipeline.cpp
+    src/answer-pipeline.hpp
     src/hindsight-filter.cpp
     src/hindsight-filter.hpp
     src/plugin-settings.cpp
