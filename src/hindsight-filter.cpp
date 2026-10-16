@@ -25,14 +25,14 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 #include <util/platform.h>
+#include <util/task.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
-#include <ctime>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -41,6 +41,9 @@ namespace {
 constexpr int kDefaultWindowSeconds = 30;
 constexpr int kMinWindowSeconds = 5;
 constexpr int kMaxWindowSeconds = 30;
+
+// Clips waiting to be written.
+constexpr size_t kMaxPendingClips = 4;
 
 // One filter instance per source it is added to (normally just the mic).
 struct HindsightFilter {
@@ -59,6 +62,19 @@ struct HindsightFilter {
 	// The API keys are not here: every filter shares the ones in
 	// secret-store.cpp.
 	std::string discord_user_id;
+
+	// Writes clips one at a time, off the hotkey thread. destroy() finishes
+	// the queued clips before the filter goes away.
+	os_task_queue_t *clip_writer = nullptr;
+	std::atomic<size_t> pending_clips{0};
+};
+
+// One clip waiting for the clip writer.
+struct ClipJob {
+	HindsightFilter *filter;
+	std::vector<float> samples;
+	uint32_t sample_rate;
+	std::string name; // without the extension
 };
 
 // Returns the audio heard within the window before now, oldest sample first.
@@ -108,43 +124,78 @@ bool write_wav(const std::string &path, const std::vector<float> &samples, uint3
 	return fclose(file) == 0 && written;
 }
 
-std::string clip_path()
+// Returns a path in the clips folder that no file uses yet, or "" if OBS
+// cannot give the plugin a config folder. Only the clip writer calls it, so
+// two captures in the same second cannot pick the same name.
+std::string new_clip_path(const std::string &name)
 {
-	char name[64];
-	const time_t now = time(nullptr);
-	strftime(name, sizeof(name), "clips/hindsight-%Y%m%d-%H%M%S.wav", localtime(&now));
+	char *dir = obs_module_config_path("clips");
+	if (!dir)
+		return "";
+	os_mkdirs(dir);
+	const std::string folder = dir;
+	bfree(dir);
 
-	char *path = obs_module_config_path(name);
-	std::string result = path ? path : "";
-	bfree(path);
-	return result;
+	for (int copy = 1;; copy++) {
+		std::string path = folder;
+		path += "/";
+		path += name;
+		if (copy > 1)
+			path += "-" + std::to_string(copy);
+		path += ".wav";
+		if (!os_file_exists(path.c_str()))
+			return path;
+	}
+}
+
+// Runs on the clip writer's thread.
+void write_clip(void *param)
+{
+	auto *job = static_cast<ClipJob *>(param);
+	const std::string path = new_clip_path(job->name);
+	const double seconds = static_cast<double>(job->samples.size()) / job->sample_rate;
+
+	if (path.empty())
+		obs_log(LOG_ERROR, "could not find the plugin's config folder to save the clip");
+	else if (write_wav(path, job->samples, job->sample_rate))
+		obs_log(LOG_INFO, "saved %.1f s of audio to %s", seconds, path.c_str());
+	else
+		obs_log(LOG_ERROR, "could not write %s", path.c_str());
+
+	job->filter->pending_clips--;
+	delete job;
 }
 
 // What the hotkey will eventually do end to end. For the spike it saves the
 // buffered audio so we can listen to exactly what would be transcribed.
 void capture(HindsightFilter *filter)
 {
+	// Each clip holds up to 30 s of audio (about 6 MB), so don't let them
+	// pile up if the disk is slow.
+	if (++filter->pending_clips > kMaxPendingClips) {
+		filter->pending_clips--;
+		obs_log(LOG_WARNING, "still saving earlier clips; skipped this one");
+		return;
+	}
+
 	std::vector<float> samples = snapshot(filter);
 	if (samples.empty()) {
+		filter->pending_clips--;
 		obs_log(LOG_WARNING, "no audio buffered yet; is the filter on an active mic?");
 		return;
 	}
 
-	const uint32_t sample_rate = filter->sample_rate;
-	const std::string path = clip_path();
+	// Named for when the hotkey was pressed, the way OBS names recordings.
+	char *name = os_generate_formatted_filename(nullptr, false, "hindsight-%CCYY%MM%DD-%hh%mm%ss");
+	auto *job = new ClipJob{filter, std::move(samples), filter->sample_rate, name ? name : "hindsight"};
+	bfree(name);
 
 	// Writing a few megabytes to disk should not hold up the hotkey thread.
-	std::thread([samples = std::move(samples), sample_rate, path]() {
-		char *dir = obs_module_config_path("clips");
-		os_mkdirs(dir);
-		bfree(dir);
-
-		const double seconds = static_cast<double>(samples.size()) / sample_rate;
-		if (write_wav(path, samples, sample_rate))
-			obs_log(LOG_INFO, "saved %.1f s of audio to %s", seconds, path.c_str());
-		else
-			obs_log(LOG_ERROR, "could not write %s", path.c_str());
-	}).detach();
+	if (!os_task_queue_queue_task(filter->clip_writer, write_clip, job)) {
+		filter->pending_clips--;
+		delete job;
+		obs_log(LOG_ERROR, "could not queue the clip to be saved");
+	}
 }
 
 void on_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
@@ -218,6 +269,7 @@ void *create(obs_data_t *settings, obs_source_t *source)
 {
 	auto *filter = new HindsightFilter();
 	filter->source = source;
+	filter->clip_writer = os_task_queue_create();
 
 	audio_t *audio = obs_get_audio();
 	filter->sample_rate = audio_output_get_sample_rate(audio);
@@ -235,6 +287,8 @@ void destroy(void *data)
 	auto *filter = static_cast<HindsightFilter *>(data);
 	if (filter->hotkey != OBS_INVALID_HOTKEY_ID)
 		obs_hotkey_unregister(filter->hotkey);
+	// Writes the clips still queued, then stops the thread.
+	os_task_queue_destroy(filter->clip_writer);
 	delete filter;
 }
 
