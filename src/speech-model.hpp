@@ -20,16 +20,35 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include <string>
 
-// The Whisper model transcriber.cpp uses: base.en, about 142 MB, English only.
-// It is not shipped with the plugin; the first time OBS starts with Hindsight,
-// it downloads in the background into the plugin's config folder.
+// The models transcriber.cpp uses: Whisper base.en (about 142 MB, English
+// only) and Silero voice detection (about 1 MB). They are not shipped with
+// the plugin; the first time OBS starts with Hindsight, they download in the
+// background into the plugin's config folder.
 
-// Checks the saved model, or downloads it if it is missing or damaged, on a
-// background thread. Called from obs_module_load, after curl_global_init.
+// Checks the saved models, or downloads any missing or damaged, on a
+// background thread. Called from obs_module_load, after curl_global_init, and
+// again from the settings window to retry after a failure. Does nothing while
+// a run is still going.
 void speech_model_start();
 
 // Stops a download in progress. Called from obs_module_unload.
 void speech_model_stop();
 
+// What the background work is doing, for the settings window to show.
+struct SpeechModelStatus {
+	enum class State { checking, downloading, ready, failed };
+	enum class Model { speech, voice_detection };
+	State state = State::checking;
+	Model model = Model::speech; // the one being checked, downloaded or that failed
+	long long downloaded = 0;    // bytes, while downloading
+	long long total = 0;         // bytes, or 0 while the size is not known yet
+};
+
+SpeechModelStatus speech_model_status();
+
 // The model file's path, or empty while it is missing or still downloading.
 std::string speech_model_path();
+
+// The voice detection model's path, or empty while it is missing or still
+// downloading. Transcription works without it, only slower.
+std::string vad_model_path();

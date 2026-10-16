@@ -53,7 +53,7 @@ On Windows, the easiest way to update is the **Update now** button in the
 Hindsight filter's settings (see [Update notices](#update-notices)). You can
 also run the newer installer the same way as the first one. Either way it
 replaces the old version and keeps your settings and keys. If OBS is open, the
-installer offers to close it.
+installer offers to close it, and its last page can start OBS again.
 
 To uninstall, open Windows **Settings > Apps > Installed apps**, find
 **Hindsight for OBS**, and choose **Uninstall**.
@@ -71,15 +71,24 @@ uninstall, delete it.
 
 ## Trying the current build
 
+<!-- The Windows installer links to this heading (#trying-the-current-build).
+If you rename it, update the link in cmake/windows/resources/installer-Windows.iss. -->
+
 This is an early test build. The hotkey transcribes the last 30 seconds of your
 mic on your PC, asks Claude for the question and answer, and writes them to the
 OBS log. It does not message Discord yet.
 
 1. [Install the plugin](#installing) and start OBS. Wait a minute or two for
-   the speech model to download; the log says `speech model downloaded` when
-   it's done.
+   the speech models to download. **Tools > Hindsight settings** shows the
+   download's progress and says when they're ready, with a **Try again**
+   button if a download fails.
 2. Under **Tools > Hindsight settings**, enter your Claude API key and click
-   **Save**.
+   **Save**. Create the key on the
+   [API keys](https://platform.claude.com/settings/keys) page of the Claude
+   Console with a workspace selected; a key without a workspace is rejected.
+   Claude searches the web for questions about current events (up to three
+   searches a question, at $0.01 each on your key), so keep web search turned
+   on under [Capabilities](https://platform.claude.com/settings/capabilities).
 3. Open your mic's **Filters**, add **Hindsight**, and close the window.
 4. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
    last question" under it.
@@ -87,15 +96,18 @@ OBS log. It does not message Discord yet.
    clip now** in the filter's settings).
 6. **Help > Log Files > View Current Log** shows what Hindsight heard, the
    question Claude found and its answer, with timings, plus where the clip was
-   saved as a WAV. Because the log holds what you said, check it before
-   sharing it publicly.
+   saved as a WAV. Hindsight keeps the last 10 clips; **Delete saved clips**
+   in Tools > Hindsight settings removes them all. Because the log holds what
+   you said, check it before sharing it publicly.
 
 ## Update notices
 
 Each time OBS starts, Hindsight asks GitHub once for the latest release. If a
-newer one is out, the top of the Hindsight filter's settings says so and the
-OBS log notes it. If GitHub cannot be reached, Hindsight carries on without a
-notice.
+newer one is out, the top of the Hindsight filter's settings and of **Tools >
+Hindsight settings** says so, and the OBS log notes it. If GitHub cannot be
+reached, Hindsight carries on without a notice. When there is no notice,
+**Tools > Hindsight settings** has a **Check for updates** button to ask again
+at any time.
 
 On Windows the notice has an **Update now** button. It downloads the new
 installer, checks its SHA-256 against the one GitHub lists for the release, and

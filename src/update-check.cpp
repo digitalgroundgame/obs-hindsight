@@ -49,6 +49,7 @@ constexpr std::size_t kMaxResponseBytes = 1024 * 1024;
 
 std::thread worker;
 std::atomic<bool> stopping{false};
+std::atomic<UpdateCheckState> state{UpdateCheckState::not_checked};
 
 std::mutex result_lock;
 std::string newer_version;                // guarded by result_lock
@@ -156,11 +157,14 @@ std::optional<LatestRelease> fetch_latest_release()
 void run_check()
 {
 	std::optional<LatestRelease> release = fetch_latest_release();
-	if (!release)
+	if (!release) {
+		state = UpdateCheckState::failed;
 		return;
+	}
 
 	if (!update_available(release->tag, PLUGIN_VERSION)) {
 		obs_log(LOG_INFO, "up to date (latest release is %s)", release->tag.c_str());
+		state = UpdateCheckState::up_to_date;
 		return;
 	}
 
@@ -169,14 +173,17 @@ void run_check()
 	std::lock_guard<std::mutex> guard(result_lock);
 	newer_version = std::move(release->tag);
 	installer = std::move(release->installer);
+	state = UpdateCheckState::newer;
 }
 
 } // namespace
 
 void update_check_start()
 {
-	if (worker.joinable())
+	if (state == UpdateCheckState::checking)
 		return;
+	if (worker.joinable())
+		worker.join(); // an earlier check, already finished
 	// Without an asynchronous resolver, curl looks up names in one blocking
 	// call that ignores our timeouts (CURLOPT_NOSIGNAL turns off the alarm it
 	// would use) and never calls on_progress. A slow DNS server could then
@@ -184,9 +191,11 @@ void update_check_start()
 	const curl_version_info_data *info = curl_version_info(CURLVERSION_NOW);
 	if (!(info->features & CURL_VERSION_ASYNCHDNS)) {
 		obs_log(LOG_INFO, "update check skipped: this curl build cannot look up names in the background");
+		state = UpdateCheckState::failed;
 		return;
 	}
 	stopping = false;
+	state = UpdateCheckState::checking;
 	worker = std::thread(run_check);
 }
 
@@ -195,6 +204,11 @@ void update_check_stop()
 	stopping = true;
 	if (worker.joinable())
 		worker.join();
+}
+
+UpdateCheckState update_check_state()
+{
+	return state.load();
 }
 
 std::string update_check_newer_version()

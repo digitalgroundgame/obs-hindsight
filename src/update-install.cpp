@@ -47,6 +47,9 @@ namespace {
 std::thread worker;
 std::atomic<bool> stopping{false};
 std::atomic<UpdateInstallState> state{UpdateInstallState::idle};
+// How far the current download has got, for the progress bar. percent is -1
+// when no download is running.
+std::atomic<int> percent{-1};
 
 std::mutex source_lock;
 obs_weak_source_t *source_to_refresh = nullptr; // guarded by source_lock
@@ -55,15 +58,22 @@ obs_weak_source_t *source_to_refresh = nullptr; // guarded by source_lock
 
 // Redraws the filter's settings, if they are open, to show the new state.
 // OBS hands the redraw to its UI thread, so this is safe from the worker.
-void set_state(UpdateInstallState next)
+void refresh_properties()
 {
-	state = next;
 	std::lock_guard<std::mutex> guard(source_lock);
 	obs_source_t *source = obs_weak_source_get_source(source_to_refresh);
 	if (source) {
 		obs_source_update_properties(source);
 		obs_source_release(source);
 	}
+}
+
+void set_state(UpdateInstallState next)
+{
+	if (next != UpdateInstallState::downloading)
+		percent = -1;
+	state = next;
+	refresh_properties();
 }
 
 struct Download {
@@ -84,6 +94,13 @@ size_t write_chunk(char *data, size_t size, size_t count, void *user)
 		return 0;
 	download->hash.add(data, bytes);
 	download->received += bytes;
+
+	// The filter's settings show the percentage as text, so redraw them
+	// every 10% rather than on every chunk.
+	const int now = download->expected ? static_cast<int>(download->received * 100 / download->expected) : 0;
+	const int before = percent.exchange(now);
+	if (now / 10 != before / 10)
+		refresh_properties();
 	return bytes;
 }
 
@@ -256,6 +273,7 @@ void update_install_start(obs_source_t *source)
 		source_to_refresh = obs_source_get_weak_source(source);
 	}
 	stopping = false;
+	percent = 0;
 	state = UpdateInstallState::downloading;
 	worker = std::thread(run_update, std::move(*installer));
 #else
@@ -266,6 +284,11 @@ void update_install_start(obs_source_t *source)
 UpdateInstallState update_install_state()
 {
 	return state.load();
+}
+
+int update_install_percent()
+{
+	return percent.load();
 }
 
 void update_install_stop()
