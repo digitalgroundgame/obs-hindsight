@@ -97,6 +97,38 @@ void forgets_one_key()
 	CHECK(secrets.claude_api_key.empty());
 }
 
+void handles_the_hindsight_code()
+{
+	Secrets stored;
+	stored.discord_bot_token = "tok-saved";
+	Secrets typed;
+	typed.hindsight_code = " dgc-new\n";
+
+	CHECK(merge_typed_keys(stored, typed));
+	CHECK(stored.hindsight_code == "dgc-new");
+	CHECK(stored.discord_bot_token == "tok-saved");
+
+	CHECK(forget_key(stored, SecretKey::HindsightCode));
+	CHECK(stored.hindsight_code.empty());
+	CHECK(stored.discord_bot_token == "tok-saved");
+}
+
+void recognises_hindsight_codes()
+{
+	const std::string random(43, 'A');
+	CHECK(is_hindsight_code("dgc_" + random));
+	CHECK(is_hindsight_code("dgc_abcdefghijklmnopqrstuvwxyzABCDEFGHIJK-_0123"));
+
+	CHECK(!is_hindsight_code(""));
+	CHECK(!is_hindsight_code("dgc_"));
+	CHECK(!is_hindsight_code("dgc_" + random.substr(1))); // pasted one short
+	CHECK(!is_hindsight_code("dgc_" + random + "A"));
+	CHECK(!is_hindsight_code("DGC_" + random));
+	CHECK(!is_hindsight_code("sk_" + random + "A")); // the wrong key in the box
+	CHECK(!is_hindsight_code("dgc_" + random.substr(1) + "="));
+	CHECK(!is_hindsight_code("dgc_" + random.substr(1) + "+"));
+}
+
 } // namespace
 
 int main()
@@ -107,5 +139,7 @@ int main()
 	merge_reports_no_change_for_the_same_key();
 	old_keys_fill_only_empty_slots();
 	forgets_one_key();
+	handles_the_hindsight_code();
+	recognises_hindsight_codes();
 	return check::finish();
 }

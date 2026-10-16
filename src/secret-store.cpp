@@ -41,6 +41,7 @@ std::string encode_secrets(const Secrets &secrets)
 	obs_data_t *data = obs_data_create();
 	obs_data_set_string(data, kClaudeApiKeyName, clean_key(secrets.claude_api_key).c_str());
 	obs_data_set_string(data, kDiscordBotTokenName, clean_key(secrets.discord_bot_token).c_str());
+	obs_data_set_string(data, kHindsightCodeName, clean_key(secrets.hindsight_code).c_str());
 	const char *json = obs_data_get_json(data);
 	std::string text = json ? json : "";
 	obs_data_release(data);
@@ -54,6 +55,7 @@ bool decode_secrets(const std::string &text, Secrets &secrets)
 		return false;
 	secrets.claude_api_key = clean_key(obs_data_get_string(data, kClaudeApiKeyName));
 	secrets.discord_bot_token = clean_key(obs_data_get_string(data, kDiscordBotTokenName));
+	secrets.hindsight_code = clean_key(obs_data_get_string(data, kHindsightCodeName));
 	obs_data_release(data);
 	return true;
 }

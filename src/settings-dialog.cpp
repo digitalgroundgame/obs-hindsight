@@ -48,6 +48,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace {
 
+#ifdef HINDSIGHT_ACCESS_CODES
+// Where a streamer signs in with Discord to get their Hindsight code.
+constexpr const char *kGetCodeUrl = "https://connect.digitalgroundgame.org";
+#endif
+
 QString text(const char *key)
 {
 	return QString::fromUtf8(obs_module_text(key));
@@ -155,7 +160,8 @@ void show_saved_state(const KeyRow &row, bool saved)
 	show_status(row.status, saved ? Mark::good : Mark::attention, text(saved ? row.saved_text : row.missing_text));
 }
 
-KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent)
+// extra, if given, goes after the Forget button.
+KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent, QWidget *extra = nullptr)
 {
 	KeyRow row;
 	row.edit = new QLineEdit(parent);
@@ -165,6 +171,8 @@ KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent)
 	auto *line = new QHBoxLayout();
 	line->addWidget(row.edit, 1);
 	line->addWidget(row.forget);
+	if (extra)
+		line->addWidget(extra);
 	form->addRow(text(label), line);
 	return row;
 }
@@ -350,10 +358,20 @@ void open_settings_dialog(void *)
 	claude.status = add_status_line(status, &dialog);
 	claude.saved_text = "Hindsight.ClaudeKeySaved";
 	claude.missing_text = "Hindsight.ClaudeKeyMissing";
+#ifdef HINDSIGHT_ACCESS_CODES
+	auto *get_code = new QPushButton(text("Hindsight.GetCode"), &dialog);
+	KeyRow code = add_key_row(form, "Hindsight.HindsightCode", &dialog, get_code);
+	code.status = add_status_line(status, &dialog);
+	code.saved_text = "Hindsight.CodeSaved";
+	code.missing_text = "Hindsight.CodeMissing";
+	QObject::connect(get_code, &QPushButton::clicked, &dialog,
+			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetCodeUrl))); });
+#else
 	KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", &dialog);
 	discord.status = add_status_line(status, &dialog);
 	discord.saved_text = "Hindsight.DiscordTokenSaved";
 	discord.missing_text = "Hindsight.DiscordTokenMissing";
+#endif
 	add_note(keys, "Hindsight.SettingsNote", "Hindsight.SettingsNoteDetails", &dialog);
 	layout->addWidget(keys_box);
 
@@ -362,7 +380,11 @@ void open_settings_dialog(void *)
 
 	const Secrets saved = secret_store_get();
 	show_saved_state(claude, !saved.claude_api_key.empty());
+#ifdef HINDSIGHT_ACCESS_CODES
+	show_saved_state(code, !saved.hindsight_code.empty());
+#else
 	show_saved_state(discord, !saved.discord_bot_token.empty());
+#endif
 
 	QObject::connect(claude.forget, &QPushButton::clicked, &dialog, [claude]() {
 		if (secret_store_forget(SecretKey::ClaudeApiKey)) {
@@ -370,12 +392,21 @@ void open_settings_dialog(void *)
 			show_saved_state(claude, false);
 		}
 	});
+#ifdef HINDSIGHT_ACCESS_CODES
+	QObject::connect(code.forget, &QPushButton::clicked, &dialog, [code]() {
+		if (secret_store_forget(SecretKey::HindsightCode)) {
+			code.edit->clear();
+			show_saved_state(code, false);
+		}
+	});
+#else
 	QObject::connect(discord.forget, &QPushButton::clicked, &dialog, [discord]() {
 		if (secret_store_forget(SecretKey::DiscordBotToken)) {
 			discord.edit->clear();
 			show_saved_state(discord, false);
 		}
 	});
+#endif
 
 	// More: the update check setting and the saved clips.
 	auto *more_box = new QGroupBox(text("Hindsight.MoreTitle"), &dialog);
@@ -405,7 +436,7 @@ void open_settings_dialog(void *)
 		clips_note->setText(text("Hindsight.ClipsDeleted").arg(static_cast<qulonglong>(deleted)));
 	});
 
-	auto *error = new QLabel(text("Hindsight.SaveFailed"), &dialog);
+	auto *error = new QLabel(&dialog);
 	error->setWordWrap(true);
 	set_class(error, "text-danger");
 	error->hide();
@@ -418,17 +449,30 @@ void open_settings_dialog(void *)
 	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
-		typed.discord_bot_token = discord.edit->text().toStdString();
 		const bool checking = check_updates->isChecked();
+
+#ifdef HINDSIGHT_ACCESS_CODES
+		typed.hindsight_code = code.edit->text().toStdString();
+		const std::string typed_code = clean_key(typed.hindsight_code);
+		if (!typed_code.empty() && !is_hindsight_code(typed_code)) {
+			error->setText(text("Hindsight.BadCode"));
+			error->show();
+			return;
+		}
+#else
+		typed.discord_bot_token = discord.edit->text().toStdString();
+#endif
 
 		// Blank boxes keep the saved key. On failure the window stays open
 		// so nothing typed is lost.
 		const bool setting_saved = checking == was_checking || plugin_settings_set_check_for_updates(checking);
 		const bool keys_saved = secret_store_save_typed(typed);
-		if (setting_saved && keys_saved)
+		if (setting_saved && keys_saved) {
 			dialog.accept();
-		else
+		} else {
+			error->setText(text("Hindsight.SaveFailed"));
 			error->show();
+		}
 	});
 
 	dialog.exec();
