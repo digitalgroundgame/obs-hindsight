@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "claude-client.hpp"
+#include "local-time.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -24,7 +25,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <curl/curl.h>
 
 #include <cstddef>
-#include <ctime>
 #include <string>
 
 namespace {
@@ -60,22 +60,6 @@ ClaudeAnswer failed(const char *type, std::string message)
 	result.error_type = type;
 	result.error_message = std::move(message);
 	return result;
-}
-
-// The streamer's local date, like "2026-10-16".
-std::string today()
-{
-	const std::time_t now = std::time(nullptr);
-	std::tm local{};
-#ifdef _WIN32
-	localtime_s(&local, &now);
-#else
-	localtime_r(&now, &local);
-#endif
-	char date[16];
-	if (std::strftime(date, sizeof(date), "%Y-%m-%d", &local) == 0)
-		return {};
-	return date;
 }
 
 ClaudeAnswer send(const std::string &request, const std::string &api_key, const std::atomic<bool> &cancel)
@@ -128,8 +112,8 @@ ClaudeAnswer send(const std::string &request, const std::string &api_key, const 
 
 ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_key, const std::atomic<bool> &cancel)
 {
-	const std::string date = today();
-	ClaudeAnswer answer = send(build_claude_request(transcript, date), api_key, cancel);
+	const std::string now = local_time_text();
+	ClaudeAnswer answer = send(build_claude_request(transcript, now), api_key, cancel);
 	long long input_tokens = answer.input_tokens;
 	long long output_tokens = answer.output_tokens;
 	long long web_searches = answer.web_searches;
@@ -138,7 +122,7 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 		const long long searches_left = kClaudeMaxSearches - web_searches;
 		if (searches_left <= 0)
 			break;
-		answer = send(build_claude_request(transcript, date, answer.paused_content,
+		answer = send(build_claude_request(transcript, now, answer.paused_content,
 						   static_cast<int>(searches_left)),
 			      api_key, cancel);
 		input_tokens += answer.input_tokens;

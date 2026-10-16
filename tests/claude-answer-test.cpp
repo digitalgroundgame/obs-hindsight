@@ -46,7 +46,8 @@ std::string tool_reply(const std::string &question, const std::string &answer)
 
 void request_thinks_offers_the_tools_and_carries_the_transcript()
 {
-	const json request = json::parse(build_claude_request("what year did \"the wall\" fall\n", "2026-10-16"));
+	const json request = json::parse(build_claude_request("what year did \"the wall\" fall\n",
+							      "Friday, October 16, 2026, 2:48 AM (UTC-04:00)"));
 
 	CHECK(request["model"] == kClaudeModel);
 	CHECK(request["max_tokens"] == kClaudeMaxTokens);
@@ -65,18 +66,19 @@ void request_thinks_offers_the_tools_and_carries_the_transcript()
 	CHECK(request["messages"][0]["role"] == "user");
 	const std::string content = request["messages"][0]["content"];
 	CHECK(content.find("what year did \"the wall\" fall") != std::string::npos);
-	CHECK(content.find("Today's date: 2026-10-16") != std::string::npos);
+	CHECK(content.find("Current local time: Friday, October 16, 2026, 2:48 AM (UTC-04:00)") != std::string::npos);
 
-	// With no date to give, the line is left out rather than left blank.
+	// With no time to give, the line is left out rather than left blank.
 	const json undated = json::parse(build_claude_request("hi", ""));
-	CHECK(undated["messages"][0]["content"].get<std::string>().find("Today's date") == std::string::npos);
+	CHECK(undated["messages"][0]["content"].get<std::string>().find("Current local time") == std::string::npos);
 	CHECK(request["system"].get<std::string>().find("1,700") != std::string::npos);
 }
 
 void request_survives_bad_utf8()
 {
 	// Transcription can split a character; the request must still be valid JSON.
-	const std::string body = build_claude_request(std::string("caf\xc3", 4), "2026-10-16");
+	const std::string body =
+		build_claude_request(std::string("caf\xc3", 4), "Friday, October 16, 2026, 2:48 AM (UTC-04:00)");
 	CHECK(!json::parse(body, nullptr, false).is_discarded());
 }
 
@@ -151,17 +153,20 @@ void pause_turn_resumes_with_the_content()
 	CHECK(paused.input_tokens == 50);
 
 	// The content goes back unchanged as the assistant's message.
-	const json request = json::parse(build_claude_request("who won", "2026-10-16", paused.paused_content));
+	const json request = json::parse(build_claude_request(
+		"who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)", paused.paused_content));
 	CHECK(request["messages"].size() == 2);
 	CHECK(request["messages"][1]["role"] == "assistant");
 	CHECK(request["messages"][1]["content"] == json::parse(paused_reply)["content"]);
 
 	// A resumed turn gets only the searches it has left.
-	CHECK(json::parse(build_claude_request("who won", "2026-10-16", paused.paused_content,
-					       2))["tools"][0]["max_uses"] == 2);
+	CHECK(json::parse(build_claude_request("who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)",
+					       paused.paused_content, 2))["tools"][0]["max_uses"] == 2);
 
 	// Content that is not a JSON array is left out rather than sent.
-	CHECK(json::parse(build_claude_request("who won", "2026-10-16", "oops"))["messages"].size() == 1);
+	CHECK(json::parse(build_claude_request("who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)",
+					       "oops"))["messages"]
+		      .size() == 1);
 }
 
 void reads_the_usage_and_cost()

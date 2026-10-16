@@ -91,6 +91,7 @@ set(
   clip-cleanup-test
   clip-file-test
   file-hash-test
+  local-time-test
   private-file-test
   secret-seal-test
   secrets-test
@@ -105,3 +106,7 @@ foreach(_test IN LISTS HINDSIGHT_TESTS)
   target_link_libraries(${_test} PRIVATE hindsight-core)
   add_test(NAME ${_test} COMMAND ${_test})
 endforeach()
+
+# A fixed time zone, so the test knows what local time to expect. MSVC and
+# glibc both read POSIX-style TZ values and apply US daylight saving rules.
+set_tests_properties(local-time-test PROPERTIES ENVIRONMENT "TZ=EST5EDT")
