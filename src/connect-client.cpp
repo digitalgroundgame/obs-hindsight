@@ -34,8 +34,8 @@ namespace {
 constexpr size_t kMaxResponseBytes = 64 * 1024;
 
 // DGG Connect gives Discord 12 seconds, so 15 leaves room for the trip there
-// and back.
-constexpr long kConnectTimeoutSeconds = 5;
+// and back. No separate connect limit: on Windows one cut off requests after
+// the connection was open (see claude-client.cpp).
 constexpr long kRequestTimeoutSeconds = 15;
 
 size_t append_body(char *data, size_t size, size_t count, void *user)
@@ -100,7 +100,6 @@ ConnectReply post(const char *path, const std::string &code, const std::string &
 	curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, on_progress);
 	curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT, kRequestTimeoutSeconds);
 
 	const CURLcode result = curl_easy_perform(curl);
