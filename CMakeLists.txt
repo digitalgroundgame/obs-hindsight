@@ -58,8 +58,6 @@ target_sources(
     src/answer-pipeline.hpp
     src/hindsight-filter.cpp
     src/hindsight-filter.hpp
-    src/hotkey-settings.cpp
-    src/hotkey-settings.hpp
     src/plugin-settings.cpp
     src/plugin-settings.hpp
     src/secret-store.cpp
