@@ -39,6 +39,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QStyle>
@@ -47,6 +48,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QVBoxLayout>
 
 namespace {
+
+// Digital Ground Game's website, linked from the window's footer.
+constexpr const char *kDggUrl = "https://digitalgroundgame.org";
 
 #ifdef HINDSIGHT_ACCESS_CODES
 // Where a streamer signs in with Discord to get their Hindsight code.
@@ -333,6 +337,30 @@ QLabel *add_note(QLayout *layout, const char *note, const char *details, QWidget
 	return label;
 }
 
+// The DGG logo and a link to the website, above the Save button.
+void add_footer(QVBoxLayout *layout, QWidget *parent)
+{
+	auto *footer = new QHBoxLayout();
+	char *logo_path = obs_module_file("dgg-logo.png");
+	if (logo_path) {
+		// Drawn at 32 pixels, sharp on high-DPI screens too.
+		const qreal ratio = parent->devicePixelRatioF();
+		QPixmap logo(QString::fromUtf8(logo_path));
+		bfree(logo_path);
+		if (!logo.isNull()) {
+			logo = logo.scaled(QSize(32, 32) * ratio, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+			logo.setDevicePixelRatio(ratio);
+			auto *logo_label = new QLabel(parent);
+			logo_label->setPixmap(logo);
+			footer->addWidget(logo_label);
+		}
+	}
+	auto *link = new QLabel(text("Hindsight.MadeBy").arg(QString::fromUtf8(kDggUrl)), parent);
+	link->setOpenExternalLinks(true);
+	footer->addWidget(link, 1);
+	layout->addLayout(footer);
+}
+
 void open_settings_dialog(void *)
 {
 	auto *main_window = static_cast<QWidget *>(obs_frontend_get_main_window());
@@ -441,6 +469,8 @@ void open_settings_dialog(void *)
 	set_class(error, "text-danger");
 	error->hide();
 	layout->addWidget(error);
+
+	add_footer(layout, &dialog);
 
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
 	layout->addWidget(buttons);
