@@ -39,8 +39,9 @@ struct ConnectTestStatus {
 	ConnectReply reply; // when done
 };
 
-// Starts a test with code, unless one is running. Call from the UI thread.
-void connect_test_start(const std::string &code);
+// Starts a test with code and returns true, or returns false if one is still
+// running (say, from a settings window since closed). Call from the UI thread.
+bool connect_test_start(const std::string &code);
 ConnectTestStatus connect_test_status();
 // Cancels a running test and waits for it. Call from obs_module_unload.
 void connect_test_stop();

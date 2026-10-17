@@ -54,10 +54,11 @@ int on_progress(void *user, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
 	return static_cast<const std::atomic<bool> *>(user)->load() ? 1 : 0;
 }
 
-std::string base_url()
+// HINDSIGHT_CONNECT_URL, if set, for testing against a local DGG Connect.
+const char *custom_url()
 {
 	const char *custom = std::getenv("HINDSIGHT_CONNECT_URL");
-	return custom && *custom ? custom : kConnectUrl;
+	return custom && *custom ? custom : nullptr;
 }
 
 ConnectReply failed(const char *error, std::string message, bool retry = false)
@@ -79,11 +80,15 @@ ConnectReply post(const char *path, const std::string &code, const std::string &
 	curl_slist *headers = nullptr;
 	headers = curl_slist_append(headers, "content-type: application/json");
 	headers = curl_slist_append(headers, ("authorization: Bearer " + code).c_str());
-	const std::string url = base_url() + path;
+	const char *custom = custom_url();
+	const std::string url = std::string(custom ? custom : kConnectUrl) + path;
 	const std::string user_agent = std::string("obs-hindsight/") + PLUGIN_VERSION;
 	std::string response;
 
 	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+	// Only HTTPS carries the code, unless a local test server is set.
+	if (!custom)
+		curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(curl, CURLOPT_POST, 1L);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
@@ -157,12 +162,12 @@ ConnectReply connect_send_message(const std::string &code, const std::string &co
 	return reply;
 }
 
-void connect_test_start(const std::string &code)
+bool connect_test_start(const std::string &code)
 {
 	{
 		std::lock_guard<std::mutex> guard(test_lock);
 		if (test_status.state == ConnectTestState::testing)
-			return;
+			return false;
 		test_status = {};
 		test_status.state = ConnectTestState::testing;
 	}
@@ -170,6 +175,7 @@ void connect_test_start(const std::string &code)
 		test_worker.join(); // an earlier test, already finished
 	test_stopping = false;
 	test_worker = std::thread(run_test, code);
+	return true;
 }
 
 ConnectTestStatus connect_test_status()

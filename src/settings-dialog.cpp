@@ -233,7 +233,10 @@ void add_test_button(const KeyRow &code, QDialog *dialog)
 			show_status(code.status, Mark::bad, text("Hindsight.BadCode"));
 			return;
 		}
-		connect_test_start(typed);
+		if (!connect_test_start(typed)) {
+			show_status(code.status, Mark::busy, text("Hindsight.TestBusy"));
+			return;
+		}
 		*watching = true;
 		test->setEnabled(false);
 		show_status(code.status, Mark::busy, text("Hindsight.Testing"));
