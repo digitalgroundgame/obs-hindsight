@@ -15,6 +15,8 @@ set(
   "${CMAKE_CURRENT_LIST_DIR}/clip-cleanup.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-file.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-file.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/connect-api.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/connect-api.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/file-hash.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/file-hash.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/local-time.cpp"

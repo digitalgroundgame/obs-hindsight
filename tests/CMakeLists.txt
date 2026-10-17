@@ -90,6 +90,7 @@ set(
   claude-answer-test
   clip-cleanup-test
   clip-file-test
+  connect-api-test
   file-hash-test
   local-time-test
   private-file-test

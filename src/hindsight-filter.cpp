@@ -413,8 +413,13 @@ obs_properties_t *get_properties(void *data)
 
 	add_ready_line(props);
 
+#ifdef HINDSIGHT_ACCESS_CODES
+	obs_property_t *note =
+		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.DeliveryNote"), OBS_TEXT_INFO);
+#else
 	obs_property_t *note =
 		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
+#endif
 	obs_property_text_set_info_type(note, OBS_TEXT_INFO_NORMAL);
 
 #ifndef HINDSIGHT_ACCESS_CODES

@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include "answer-pipeline.hpp"
+#include "connect-client.hpp"
 #include "hindsight-filter.hpp"
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
@@ -65,6 +66,7 @@ void obs_module_unload(void)
 {
 	update_install_stop();
 	update_check_stop();
+	connect_test_stop();
 	speech_model_stop();
 	answer_pipeline_stop();
 	transcriber_unload();

@@ -77,6 +77,8 @@ target_sources(
     ${HINDSIGHT_CORE_SOURCES}
     src/claude-client.cpp
     src/claude-client.hpp
+    src/connect-client.cpp
+    src/connect-client.hpp
 )
 target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PRIVATE "${HINDSIGHT_JSON_INCLUDE_DIR}")
 
