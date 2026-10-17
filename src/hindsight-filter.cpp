@@ -22,6 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "audio-ring.hpp"
 #include "clip-cleanup.hpp"
 #include "clip-file.hpp"
+#include "hotkey-settings.hpp"
 #include "secret-store.hpp"
 #include "speech-model.hpp"
 #include "update-check.hpp"
@@ -214,6 +215,13 @@ void take_keys_from_settings(obs_data_t *settings)
 		return;
 	obs_data_erase(settings, kClaudeApiKeyName);
 	obs_data_erase(settings, kDiscordBotTokenName);
+}
+
+bool on_set_hotkey_clicked(obs_properties_t *, obs_property_t *, void *)
+{
+	// Matches the hotkey's name, "Hindsight: answer the last question".
+	open_hotkey_settings("hindsight");
+	return false;
 }
 
 bool on_save_clip_clicked(obs_properties_t *, obs_property_t *, void *data)
@@ -412,6 +420,8 @@ obs_properties_t *get_properties(void *data)
 	add_update_notice(props, static_cast<HindsightFilter *>(data));
 
 	add_ready_line(props);
+	obs_properties_add_button2(props, "set_hotkey", obs_module_text("Hindsight.SetHotkey"), on_set_hotkey_clicked,
+				   nullptr);
 
 	obs_property_t *note =
 		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
