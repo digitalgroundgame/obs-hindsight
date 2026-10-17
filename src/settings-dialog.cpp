@@ -48,6 +48,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace {
 
+// Where a streamer creates a Claude API key.
+constexpr const char *kGetClaudeKeyUrl = "https://platform.claude.com/settings/keys";
+
 #ifdef HINDSIGHT_ACCESS_CODES
 // Where a streamer signs in with Discord to get their Hindsight code.
 constexpr const char *kGetCodeUrl = "https://connect.digitalgroundgame.org";
@@ -148,6 +151,8 @@ void show_status(const StatusLine &line, Mark mark, const QString &message)
 struct KeyRow {
 	QLineEdit *edit = nullptr;
 	QPushButton *forget = nullptr;
+	// Takes Forget's place while no key is saved, if given.
+	QPushButton *get_key = nullptr;
 	StatusLine status;
 	const char *saved_text = nullptr;
 	const char *missing_text = nullptr;
@@ -156,11 +161,14 @@ struct KeyRow {
 void show_saved_state(const KeyRow &row, bool saved)
 {
 	row.edit->setPlaceholderText(text(saved ? "Hindsight.KeySaved" : "Hindsight.KeyNotSet"));
-	row.forget->setEnabled(saved);
+	// Forget while a key is saved, the button to get one while it isn't.
+	row.forget->setVisible(saved);
+	if (row.get_key)
+		row.get_key->setVisible(!saved);
 	show_status(row.status, saved ? Mark::good : Mark::attention, text(saved ? row.saved_text : row.missing_text));
 }
 
-// extra, if given, goes after the Forget button.
+// extra, if given, goes beside the Forget button.
 KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent, QWidget *extra = nullptr)
 {
 	KeyRow row;
@@ -354,13 +362,19 @@ void open_settings_dialog(void *)
 	auto *keys = new QVBoxLayout(keys_box);
 	auto *form = new QFormLayout();
 	keys->addLayout(form);
-	KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", &dialog);
+	auto *get_claude_key = new QPushButton(text("Hindsight.GetClaudeKey"), &dialog);
+	get_claude_key->setToolTip(text("Hindsight.GetClaudeKeyNote"));
+	KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", &dialog, get_claude_key);
+	claude.get_key = get_claude_key;
 	claude.status = add_status_line(status, &dialog);
 	claude.saved_text = "Hindsight.ClaudeKeySaved";
 	claude.missing_text = "Hindsight.ClaudeKeyMissing";
+	QObject::connect(get_claude_key, &QPushButton::clicked, &dialog,
+			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetClaudeKeyUrl))); });
 #ifdef HINDSIGHT_ACCESS_CODES
 	auto *get_code = new QPushButton(text("Hindsight.GetCode"), &dialog);
 	KeyRow code = add_key_row(form, "Hindsight.HindsightCode", &dialog, get_code);
+	code.get_key = get_code;
 	code.status = add_status_line(status, &dialog);
 	code.saved_text = "Hindsight.CodeSaved";
 	code.missing_text = "Hindsight.CodeMissing";
