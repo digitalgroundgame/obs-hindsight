@@ -28,7 +28,6 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMainWindow>
-#include <QPointer>
 #include <QStackedWidget>
 #include <QString>
 #include <QTimer>
@@ -53,10 +52,10 @@ QWidget *find_settings_window()
 
 // OBS builds the hotkey list only when the page is first shown, and empties
 // the filter box as it does, so the search goes in once the list is there.
-void fill_search(QPointer<QWidget> settings, QString search, int tries)
+// Each retry's timer is tied to the Settings window, so Qt drops it if the
+// window closes first, and `settings` is never used after it is gone.
+void fill_search(QWidget *settings, const QString &search, int tries)
 {
-	if (!settings)
-		return;
 	auto *layout = settings->findChild<QFormLayout *>("hotkeyFormLayout");
 	auto *box = settings->findChild<QLineEdit *>("hotkeyFilterSearch");
 	if (!layout || !box) {
@@ -72,7 +71,7 @@ void fill_search(QPointer<QWidget> settings, QString search, int tries)
 	box->setText(search);
 }
 
-void show_hotkeys_page(QString search, int tries)
+void show_hotkeys_page(const QString &search, int tries)
 {
 	QWidget *settings = find_settings_window();
 	if (!settings) {
