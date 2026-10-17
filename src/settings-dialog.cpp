@@ -429,7 +429,7 @@ void open_settings_dialog(void *)
 
 	// The update check reads this once when OBS starts, so a change here
 	// takes effect at the next start.
-	const bool was_checking = plugin_settings_check_for_updates();
+	bool was_checking = plugin_settings_check_for_updates();
 	auto *check_updates = new QCheckBox(text("Hindsight.CheckForUpdates"), &dialog);
 	check_updates->setChecked(was_checking);
 	check_updates->setToolTip(text("Hindsight.CheckForUpdatesNote"));
@@ -456,11 +456,13 @@ void open_settings_dialog(void *)
 	error->hide();
 	layout->addWidget(error);
 
-	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+	auto *buttons = new QDialogButtonBox(
+		QDialogButtonBox::Save | QDialogButtonBox::Apply | QDialogButtonBox::Cancel, &dialog);
 	layout->addWidget(buttons);
 	QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-	// Every widget lives until exec() returns, so capturing by reference is safe.
-	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
+	// Saves what was typed and returns whether it worked. Every widget lives
+	// until exec() returns, so capturing by reference is safe.
+	auto save = [&]() -> bool {
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
 		const bool checking = check_updates->isChecked();
@@ -471,7 +473,7 @@ void open_settings_dialog(void *)
 		if (!typed_code.empty() && !is_hindsight_code(typed_code)) {
 			error->setText(text("Hindsight.BadCode"));
 			error->show();
-			return;
+			return false;
 		}
 #else
 		typed.discord_bot_token = discord.edit->text().toStdString();
@@ -481,12 +483,33 @@ void open_settings_dialog(void *)
 		// so nothing typed is lost.
 		const bool setting_saved = checking == was_checking || plugin_settings_set_check_for_updates(checking);
 		const bool keys_saved = secret_store_save_typed(typed);
-		if (setting_saved && keys_saved) {
-			dialog.accept();
-		} else {
+		if (!setting_saved || !keys_saved) {
 			error->setText(text("Hindsight.SaveFailed"));
 			error->show();
+			return false;
 		}
+		was_checking = checking;
+		return true;
+	};
+	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
+		if (save())
+			dialog.accept();
+	});
+	// Apply saves and keeps the window open, showing the keys as saved.
+	QObject::connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, &dialog, [&]() {
+		if (!save())
+			return;
+		error->hide();
+		const Secrets now = secret_store_get();
+		claude.edit->clear();
+		show_saved_state(claude, !now.claude_api_key.empty());
+#ifdef HINDSIGHT_ACCESS_CODES
+		code.edit->clear();
+		show_saved_state(code, !now.hindsight_code.empty());
+#else
+		discord.edit->clear();
+		show_saved_state(discord, !now.discord_bot_token.empty());
+#endif
 	});
 
 	dialog.exec();
