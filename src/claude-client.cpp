@@ -39,9 +39,11 @@ constexpr std::size_t kMaxResponseBytes = 1024 * 1024;
 // make the streamer wait.
 constexpr int kMaxResumes = 1;
 
-// Opening the connection (lookup, TCP and TLS) normally takes well under a
-// second. The whole request, searches included, gets a minute.
-constexpr long kConnectTimeoutSeconds = 10;
+// The whole request, thinking and searches included, gets a minute. There is
+// no shorter limit for opening the connection: in 0.9.0 on Windows a 10 s
+// connect limit cut off answers Claude took longer than 10 s to write, though
+// the connection was open after 0.1 s. A lookup or connection that fails still
+// fails at once, and one that hangs runs into this limit.
 constexpr long kRequestTimeoutSeconds = 60;
 
 size_t append_body(char *data, size_t size, size_t count, void *user)
@@ -107,14 +109,11 @@ std::string timings(CURL *curl)
 }
 
 // Failures before any of the request went out, so the API never saw it and
-// trying again cannot bill it twice.
-bool never_sent(CURL *curl, CURLcode result)
+// trying again cannot bill it twice. A timeout is not one of them: after a
+// minute, the streamer has waited long enough.
+bool never_sent(CURLcode result)
 {
-	if (result == CURLE_COULDNT_RESOLVE_HOST || result == CURLE_COULDNT_CONNECT)
-		return true;
-	curl_off_t uploaded = 0;
-	curl_easy_getinfo(curl, CURLINFO_SIZE_UPLOAD_T, &uploaded);
-	return result == CURLE_OPERATION_TIMEDOUT && uploaded == 0;
+	return result == CURLE_COULDNT_RESOLVE_HOST || result == CURLE_COULDNT_CONNECT;
 }
 
 // Sends one request on curl, which the caller reuses so a resumed turn goes
@@ -141,11 +140,10 @@ ClaudeAnswer send(CURL *curl, int number, const std::string &request, const std:
 	curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, on_progress);
 	curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT, kRequestTimeoutSeconds);
 
 	CURLcode result = curl_easy_perform(curl);
-	if (result != CURLE_OK && !cancel.load() && never_sent(curl, result)) {
+	if (result != CURLE_OK && !cancel.load() && never_sent(result)) {
 		obs_log(LOG_WARNING, "Claude request %d couldn't connect after %s: %s; trying once more", number,
 			timings(curl).c_str(), curl_easy_strerror(result));
 		body.clear();
@@ -162,8 +160,10 @@ ClaudeAnswer send(CURL *curl, int number, const std::string &request, const std:
 	if (cancel.load())
 		return failed("cancelled", {});
 	if (result != CURLE_OK) {
-		obs_log(LOG_WARNING, "Claude request %d failed after %s: %s", number, took.c_str(),
-			curl_easy_strerror(result));
+		curl_off_t uploaded = 0;
+		curl_easy_getinfo(curl, CURLINFO_SIZE_UPLOAD_T, &uploaded);
+		obs_log(LOG_WARNING, "Claude request %d failed after %s, %lld of %zu bytes sent: %s", number,
+			took.c_str(), static_cast<long long>(uploaded), request.size(), curl_easy_strerror(result));
 		return failed("network", curl_easy_strerror(result));
 	}
 
