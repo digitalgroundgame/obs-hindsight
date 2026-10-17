@@ -350,10 +350,13 @@ Mark update_mark(const UpdateNotice &notice)
 void add_update_line(QGridLayout *grid, QDialog *dialog)
 {
 	const StatusLine line = add_status_line(grid, dialog);
+	// One line only; the Update now tooltip has the details.
+	line.label->setWordWrap(false);
 	auto *progress = new QProgressBar(dialog);
 	progress->setRange(0, 100);
 	grid->addWidget(progress, grid->rowCount(), 1, 1, 2);
 	auto *update_now = new QPushButton(text("Hindsight.UpdateNow"), dialog);
+	update_now->setToolTip(text("Hindsight.UpdateNowTip"));
 	auto *release_page = new QPushButton(text("Hindsight.DownloadUpdate"), dialog);
 	auto *check_now = new QPushButton(text("Hindsight.CheckNow"), dialog);
 	line.buttons->addWidget(update_now);
