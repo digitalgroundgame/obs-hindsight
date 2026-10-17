@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "settings-dialog.hpp"
 #include "clip-cleanup.hpp"
+#include "connect-client.hpp"
 #include "hindsight-filter.hpp"
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
@@ -46,6 +47,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <memory>
 
 namespace {
 
@@ -188,6 +191,56 @@ KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent, QWidge
 	form->addRow(text(label), line);
 	return row;
 }
+
+#ifdef HINDSIGHT_ACCESS_CODES
+// A Test button on the code's status line. It sends a test DM with the code
+// in the box, or the saved one, and shows how that went on the same line until
+// the code is saved or forgotten.
+void add_test_button(const KeyRow &code, QDialog *dialog)
+{
+	auto *test = new QPushButton(text("Hindsight.TestCode"), dialog);
+	test->setToolTip(text("Hindsight.TestCodeNote"));
+	code.status.buttons->addWidget(test);
+
+	// Whether this window is waiting on a test it started, so a result left
+	// from an earlier window isn't shown here.
+	auto watching = std::make_shared<bool>(false);
+	auto *timer = new QTimer(dialog);
+	QObject::connect(timer, &QTimer::timeout, dialog, [code, test, watching, timer]() {
+		const ConnectTestStatus status = connect_test_status();
+		if (status.state == ConnectTestState::testing)
+			return;
+		timer->stop();
+		test->setEnabled(true);
+		if (!*watching)
+			return;
+		*watching = false;
+		if (status.reply.ok)
+			show_status(code.status, Mark::good,
+				    text("Hindsight.TestSent").arg(QString::fromStdString(status.reply.discord_name)));
+		else
+			show_status(code.status, Mark::bad, QString::fromStdString(status.reply.message));
+	});
+	QObject::connect(test, &QPushButton::clicked, dialog, [code, test, watching, timer]() {
+		std::string typed = clean_key(code.edit->text().toStdString());
+		if (typed.empty())
+			typed = secret_store_get().hindsight_code;
+		if (typed.empty()) {
+			show_status(code.status, Mark::attention, text("Hindsight.TestNeedsCode"));
+			return;
+		}
+		if (!is_hindsight_code(typed)) {
+			show_status(code.status, Mark::bad, text("Hindsight.BadCode"));
+			return;
+		}
+		connect_test_start(typed);
+		*watching = true;
+		test->setEnabled(false);
+		show_status(code.status, Mark::busy, text("Hindsight.Testing"));
+		timer->start(250);
+	});
+}
+#endif
 
 // The speech models' check or download, refreshed while the window is open.
 struct ModelRow {
@@ -408,6 +461,7 @@ void open_settings_dialog(void *)
 	code.missing_text = "Hindsight.CodeMissing";
 	QObject::connect(get_code, &QPushButton::clicked, &dialog,
 			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetCodeUrl))); });
+	add_test_button(code, &dialog);
 #else
 	KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", &dialog);
 	discord.status = add_status_line(status, &dialog);

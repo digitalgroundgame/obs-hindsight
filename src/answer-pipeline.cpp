@@ -18,6 +18,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "answer-pipeline.hpp"
 #include "claude-client.hpp"
+#include "connect-client.hpp"
 #include "secret-store.hpp"
 #include "transcriber.hpp"
 
@@ -69,6 +70,26 @@ const char *transcript_problem(Transcript::Outcome outcome)
 	}
 }
 
+#ifdef HINDSIGHT_ACCESS_CODES
+// DMs the answer to the streamer through DGG Connect.
+void send_to_discord(const ClaudeAnswer &reply, uint64_t start)
+{
+	const std::string code = secret_store_get().hindsight_code;
+	if (code.empty()) {
+		obs_log(LOG_WARNING, "not sent to Discord: add your Hindsight code under Tools > Hindsight settings");
+		return;
+	}
+	const uint64_t sending = os_gettime_ns();
+	const ConnectReply sent =
+		connect_send_message(code, connect_message_content(reply.question, reply.answer), stopping);
+	if (sent.ok)
+		obs_log(LOG_INFO, "sent to %s on Discord (%.1f s, %.1f s in all)", sent.discord_name.c_str(),
+			seconds_since(sending), seconds_since(start));
+	else if (sent.error != "cancelled")
+		obs_log(LOG_WARNING, "not sent to Discord (%s): %s", sent.error.c_str(), sent.message.c_str());
+}
+#endif
+
 void answer(const Clip &clip)
 {
 	const uint64_t start = os_gettime_ns();
@@ -103,6 +124,9 @@ void answer(const Clip &clip)
 			seconds_since(asked), seconds_since(start),
 			claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches),
 			reply.input_tokens, reply.output_tokens, reply.web_searches, reply.answer.c_str());
+#ifdef HINDSIGHT_ACCESS_CODES
+		send_to_discord(reply, start);
+#endif
 		break;
 	case ClaudeAnswer::Outcome::no_question:
 		obs_log(LOG_INFO,
