@@ -32,6 +32,8 @@ constexpr const char *kSettingsFile = "settings.json";
 constexpr const char *kCheckForUpdates = "check_for_updates";
 constexpr const char *kClaudeModelKey = "claude_model";
 constexpr const char *kWebSearch = "web_search";
+constexpr const char *kDiscordUserId = "discord_user_id";
+constexpr const char *kUseOwnBot = "use_own_bot";
 
 // So a read never sees a save half done, and two saves don't undo each other.
 std::mutex settings_lock;
@@ -54,6 +56,7 @@ obs_data_t *read_settings(const std::string &path)
 	obs_data_set_default_bool(data, kCheckForUpdates, true);
 	obs_data_set_default_string(data, kClaudeModelKey, kDefaultClaudeModel.id);
 	obs_data_set_default_bool(data, kWebSearch, true);
+	obs_data_set_default_bool(data, kUseOwnBot, false);
 	return data;
 }
 
@@ -114,5 +117,32 @@ bool plugin_settings_set_claude_options(const ClaudeOptions &options)
 	return save_settings([&options](obs_data_t *data) {
 		obs_data_set_string(data, kClaudeModelKey, claude_model(options.model).id);
 		obs_data_set_bool(data, kWebSearch, options.web_search);
+	});
+}
+
+std::string plugin_settings_discord_user_id()
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	obs_data_t *data = read_settings(settings_path());
+	std::string user_id = obs_data_get_string(data, kDiscordUserId);
+	obs_data_release(data);
+	return user_id;
+}
+
+bool plugin_settings_use_own_bot()
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	obs_data_t *data = read_settings(settings_path());
+	const bool on = obs_data_get_bool(data, kUseOwnBot);
+	obs_data_release(data);
+	return on;
+}
+
+bool plugin_settings_set_discord(const std::string &user_id, bool use_own_bot)
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	return save_settings([&user_id, use_own_bot](obs_data_t *data) {
+		obs_data_set_string(data, kDiscordUserId, user_id.c_str());
+		obs_data_set_bool(data, kUseOwnBot, use_own_bot);
 	});
 }

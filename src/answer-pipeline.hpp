@@ -23,8 +23,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 // What the hotkey does with a clip: transcribe it on this PC, ask Claude for
 // the question and answer, send the answer to the streamer's Discord DMs
-// through DGG Connect (in builds with HINDSIGHT_ACCESS_CODES), and write each
-// step to the OBS log. One clip at a time, on its own thread.
+// (through DGG Connect in builds with HINDSIGHT_ACCESS_CODES, unless the
+// streamer chose their own bot), and write each step to the OBS log. One clip at a time, on its own thread.
 
 // Starts the worker. Called from obs_module_load.
 void answer_pipeline_start();

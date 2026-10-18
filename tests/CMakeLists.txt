@@ -92,6 +92,7 @@ set(
   clip-cleanup-test
   clip-file-test
   connect-api-test
+  discord-api-test
   file-hash-test
   local-time-test
   private-file-test

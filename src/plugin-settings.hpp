@@ -20,6 +20,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "claude-answer.hpp"
 
+#include <string>
+
 // Hindsight's preferences that are not secrets, kept in settings.json in the
 // plugin's config folder (separate from the keys file). Safe to call from any
 // thread: the settings window saves them on OBS's UI thread while the answer
@@ -39,3 +41,15 @@ ClaudeOptions plugin_settings_claude_options();
 
 // Saves the choice. Returns false if the file could not be written.
 bool plugin_settings_set_claude_options(const ClaudeOptions &options);
+
+// The streamer's Discord user ID, for DMs from their own bot. Empty until
+// they enter it.
+std::string plugin_settings_discord_user_id();
+
+// Whether answers go through the streamer's own Discord bot rather than DGG
+// Connect. Off unless the streamer chose it; builds without
+// HINDSIGHT_ACCESS_CODES always use the bot and ignore this.
+bool plugin_settings_use_own_bot();
+
+// Saves both. Returns false if the file could not be written.
+bool plugin_settings_set_discord(const std::string &user_id, bool use_own_bot);

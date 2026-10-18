@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "settings-dialog.hpp"
 #include "clip-cleanup.hpp"
 #include "connect-client.hpp"
+#include "discord-api.hpp"
 #include "hindsight-filter.hpp"
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
@@ -153,6 +154,16 @@ void show_status(const StatusLine &line, Mark mark, const QString &message)
 	line.label->setText(message);
 }
 
+// Shows or hides a whole status line, its buttons included.
+void set_status_visible(const StatusLine &line, bool visible)
+{
+	line.mark->setVisible(visible);
+	line.label->setVisible(visible);
+	for (int i = 0; i < line.buttons->count(); i++)
+		if (QWidget *button = line.buttons->itemAt(i)->widget())
+			button->setVisible(visible);
+}
+
 // One key's row: a password box that starts empty (saved keys are never
 // shown) and a button to forget the saved key. Its line in the Status box says
 // whether one is saved.
@@ -161,6 +172,7 @@ struct KeyRow {
 	QPushButton *forget = nullptr;
 	// Takes Forget's place while no key is saved, if given.
 	QPushButton *get_key = nullptr;
+	QHBoxLayout *line = nullptr; // the row's field, for hiding the row
 	StatusLine status;
 	const char *saved_text = nullptr;
 	const char *missing_text = nullptr;
@@ -184,12 +196,12 @@ KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent, QWidge
 	row.edit->setEchoMode(QLineEdit::Password);
 	row.forget = new QPushButton(text("Hindsight.Forget"), parent);
 
-	auto *line = new QHBoxLayout();
-	line->addWidget(row.edit, 1);
-	line->addWidget(row.forget);
+	row.line = new QHBoxLayout();
+	row.line->addWidget(row.edit, 1);
+	row.line->addWidget(row.forget);
 	if (extra)
-		line->addWidget(extra);
-	form->addRow(text(label), line);
+		row.line->addWidget(extra);
+	form->addRow(text(label), row.line);
 	return row;
 }
 
@@ -469,13 +481,50 @@ void open_settings_dialog(void *)
 	QObject::connect(get_code, &QPushButton::clicked, &dialog,
 			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetCodeUrl))); });
 	add_test_button(code, &dialog);
-#else
+#endif
+	// The streamer's own Discord bot: the only way to get answers in builds
+	// without access codes, and the alternative to a code in builds with them.
 	KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", &dialog);
 	discord.status = add_status_line(status, &dialog);
 	discord.saved_text = "Hindsight.DiscordTokenSaved";
 	discord.missing_text = "Hindsight.DiscordTokenMissing";
-#endif
+	// Not a secret, so it's shown and edited in place.
+	auto *user_id = new QLineEdit(QString::fromStdString(plugin_settings_discord_user_id()), &dialog);
+	user_id->setPlaceholderText(text("Hindsight.DiscordUserIdPlaceholder"));
+	user_id->setToolTip(text("Hindsight.DiscordUserIdNote"));
+	form->addRow(text("Hindsight.DiscordUserId"), user_id);
 	add_note(keys, "Hindsight.SettingsNote", "Hindsight.SettingsNoteDetails", &dialog);
+
+#ifdef HINDSIGHT_ACCESS_CODES
+	// The code is the default. A small link swaps the code's row for the
+	// bot's, and back; Save or Apply keeps the choice.
+	auto own_bot = std::make_shared<bool>(plugin_settings_use_own_bot());
+	auto *switch_link = new QLabel(&dialog);
+	set_class(switch_link, "text-muted");
+	keys->addWidget(switch_link);
+	auto show_delivery = [form, code, discord, user_id, switch_link, own_bot]() {
+		const bool bot = *own_bot;
+		// QFormLayout shows or hides every widget in a row, so the shown
+		// row's Forget and Get buttons are then set again.
+		form->setRowVisible(code.line, !bot);
+		form->setRowVisible(discord.line, bot);
+		form->setRowVisible(user_id, bot);
+		const Secrets saved = secret_store_get();
+		if (bot)
+			show_saved_state(discord, !saved.discord_bot_token.empty());
+		else
+			show_saved_state(code, !saved.hindsight_code.empty());
+		set_status_visible(code.status, !bot);
+		set_status_visible(discord.status, bot);
+		switch_link->setText(
+			QStringLiteral("<a href='#'>%1</a>")
+				.arg(text(bot ? "Hindsight.UseCode" : "Hindsight.UseOwnBot").toHtmlEscaped()));
+	};
+	QObject::connect(switch_link, &QLabel::linkActivated, &dialog, [own_bot, show_delivery]() {
+		*own_bot = !*own_bot;
+		show_delivery();
+	});
+#endif
 	layout->addWidget(keys_box);
 
 	add_model_row(status, &dialog);
@@ -485,8 +534,10 @@ void open_settings_dialog(void *)
 	show_saved_state(claude, !saved.claude_api_key.empty());
 #ifdef HINDSIGHT_ACCESS_CODES
 	show_saved_state(code, !saved.hindsight_code.empty());
-#else
+#endif
 	show_saved_state(discord, !saved.discord_bot_token.empty());
+#ifdef HINDSIGHT_ACCESS_CODES
+	show_delivery();
 #endif
 
 	QObject::connect(claude.forget, &QPushButton::clicked, &dialog, [claude]() {
@@ -502,14 +553,13 @@ void open_settings_dialog(void *)
 			show_saved_state(code, false);
 		}
 	});
-#else
+#endif
 	QObject::connect(discord.forget, &QPushButton::clicked, &dialog, [discord]() {
 		if (secret_store_forget(SecretKey::DiscordBotToken)) {
 			discord.edit->clear();
 			show_saved_state(discord, false);
 		}
 	});
-#endif
 
 	// Claude: which model answers, and whether it may search the web. Saved
 	// with Save or Apply; the next question uses them.
@@ -578,6 +628,8 @@ void open_settings_dialog(void *)
 	QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 	// Saves what was typed and returns whether it worked. Every widget lives
 	// until exec() returns, so capturing by reference is safe.
+	std::string was_user_id = plugin_settings_discord_user_id();
+	bool was_own_bot = plugin_settings_use_own_bot();
 	auto save = [&]() -> bool {
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
@@ -594,8 +646,18 @@ void open_settings_dialog(void *)
 			error->show();
 			return false;
 		}
-#else
+#endif
 		typed.discord_bot_token = discord.edit->text().toStdString();
+		const std::string typed_user_id = clean_key(user_id->text().toStdString());
+		if (!typed_user_id.empty() && !is_discord_user_id(typed_user_id)) {
+			error->setText(text("Hindsight.BadUserId"));
+			error->show();
+			return false;
+		}
+#ifdef HINDSIGHT_ACCESS_CODES
+		const bool use_own_bot = *own_bot;
+#else
+		const bool use_own_bot = false; // ignored: these builds always use the bot
 #endif
 
 		// Blank boxes keep the saved key. On failure the window stays open
@@ -604,14 +666,19 @@ void open_settings_dialog(void *)
 		const bool options_saved =
 			(options.model == was_options.model && options.web_search == was_options.web_search) ||
 			plugin_settings_set_claude_options(options);
+		const bool discord_saved = (typed_user_id == was_user_id && use_own_bot == was_own_bot) ||
+					   plugin_settings_set_discord(typed_user_id, use_own_bot);
 		const bool keys_saved = secret_store_save_typed(typed);
-		if (!setting_saved || !options_saved || !keys_saved) {
+		if (!setting_saved || !options_saved || !discord_saved || !keys_saved) {
 			error->setText(text("Hindsight.SaveFailed"));
 			error->show();
 			return false;
 		}
 		was_checking = checking;
 		was_options = options;
+		was_user_id = typed_user_id;
+		was_own_bot = use_own_bot;
+		user_id->setText(QString::fromStdString(typed_user_id));
 		return true;
 	};
 	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
@@ -629,9 +696,11 @@ void open_settings_dialog(void *)
 #ifdef HINDSIGHT_ACCESS_CODES
 		code.edit->clear();
 		show_saved_state(code, !now.hindsight_code.empty());
-#else
+#endif
 		discord.edit->clear();
 		show_saved_state(discord, !now.discord_bot_token.empty());
+#ifdef HINDSIGHT_ACCESS_CODES
+		show_delivery();
 #endif
 	});
 

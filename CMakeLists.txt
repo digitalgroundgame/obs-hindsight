@@ -79,6 +79,8 @@ target_sources(
     src/claude-client.hpp
     src/connect-client.cpp
     src/connect-client.hpp
+    src/discord-client.cpp
+    src/discord-client.hpp
 )
 target_include_directories(${CMAKE_PROJECT_NAME} SYSTEM PRIVATE "${HINDSIGHT_JSON_INCLUDE_DIR}")
 

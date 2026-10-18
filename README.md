@@ -75,8 +75,8 @@ uninstall, delete it.
 If you rename it, update the link in cmake/windows/resources/installer-Windows.iss. -->
 
 This is an early test build. The hotkey transcribes the last 30 seconds of your
-mic on your PC, asks Claude for the question and answer, and writes them to the
-OBS log. It does not message Discord yet.
+mic on your PC, asks Claude for the question and answer, sends them to your
+Discord DMs, and writes them to the OBS log.
 
 1. [Install the plugin](#installing) and start OBS. Wait a minute or two for
    the speech models to download. **Tools > Hindsight settings** shows the
@@ -92,12 +92,19 @@ OBS log. It does not message Discord yet.
    current events (up to three searches a question, at $0.01 each on your
    key), so keep web search turned on under
    [Capabilities](https://platform.claude.com/settings/capabilities) too.
-3. Open your mic's **Filters**, add **Hindsight**, and close the window.
-4. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
+3. For the Discord DMs, click **Get a code**, sign in with Discord, and paste
+   your Hindsight code under **Keys**; **Test** sends you a test DM. To use
+   your own Discord bot instead, click **Use your own Discord bot instead** and
+   enter its bot token and your Discord user ID (turn on Developer Mode under
+   User Settings > Advanced, then right-click your name and click **Copy User
+   ID**). The bot must be in a server you're in, and you must allow DMs from
+   that server's members.
+4. Open your mic's **Filters**, add **Hindsight**, and close the window.
+5. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
    last question" under it.
-5. Ask a question out loud, then press the hotkey (or click **Save the last
+6. Ask a question out loud, then press the hotkey (or click **Save the last
    clip now** in the filter's settings).
-6. **Help > Log Files > View Current Log** shows what Hindsight heard, the
+7. **Help > Log Files > View Current Log** shows what Hindsight heard, the
    question Claude found and its answer, with timings, plus where the clip was
    saved as a WAV. Hindsight keeps the last 10 clips; **Delete saved clips**
    in Tools > Hindsight settings removes them all. Because the log holds what

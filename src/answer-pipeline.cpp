@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "answer-pipeline.hpp"
 #include "claude-client.hpp"
 #include "connect-client.hpp"
+#include "discord-client.hpp"
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
 #include "transcriber.hpp"
@@ -71,9 +72,29 @@ const char *transcript_problem(Transcript::Outcome outcome)
 	}
 }
 
+// DMs the answer to the streamer from their own Discord bot.
+void send_with_own_bot(const ClaudeAnswer &reply, uint64_t start)
+{
+	const std::string token = secret_store_get().discord_bot_token;
+	const std::string user_id = plugin_settings_discord_user_id();
+	if (token.empty() || user_id.empty()) {
+		obs_log(LOG_WARNING,
+			"not sent to Discord: add your Discord bot token and user ID under Tools > Hindsight settings");
+		return;
+	}
+	const uint64_t sending = os_gettime_ns();
+	const DiscordReply sent =
+		discord_send_dm(token, user_id, connect_message_content(reply.question, reply.answer), stopping);
+	if (sent.ok)
+		obs_log(LOG_INFO, "sent to your Discord DMs from your bot (%.1f s, %.1f s in all)",
+			seconds_since(sending), seconds_since(start));
+	else if (sent.error != "cancelled")
+		obs_log(LOG_WARNING, "not sent to Discord (%s): %s", sent.error.c_str(), sent.message.c_str());
+}
+
 #ifdef HINDSIGHT_ACCESS_CODES
 // DMs the answer to the streamer through DGG Connect.
-void send_to_discord(const ClaudeAnswer &reply, uint64_t start)
+void send_with_code(const ClaudeAnswer &reply, uint64_t start)
 {
 	const std::string code = secret_store_get().hindsight_code;
 	if (code.empty()) {
@@ -132,8 +153,12 @@ void answer(const Clip &clip)
 			claude_cost_dollars(model, reply.input_tokens, reply.output_tokens, reply.web_searches),
 			reply.input_tokens, reply.output_tokens, reply.web_searches, reply.answer.c_str());
 #ifdef HINDSIGHT_ACCESS_CODES
-		send_to_discord(reply, start);
+		if (!plugin_settings_use_own_bot()) {
+			send_with_code(reply, start);
+			break;
+		}
 #endif
+		send_with_own_bot(reply, start);
 		break;
 	case ClaudeAnswer::Outcome::no_question:
 		obs_log(LOG_INFO,
