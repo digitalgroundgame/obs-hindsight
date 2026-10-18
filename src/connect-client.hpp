@@ -23,16 +23,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <atomic>
 #include <string>
 
-// Sends to DGG Connect over HTTPS with the streamer's Hindsight code. curl must
-// already be started with curl_global_init. Set HINDSIGHT_CONNECT_URL (say,
-// to http://localhost:3000) to test against a local DGG Connect.
+// Sends to Digital Ground Game Connect over HTTPS with the streamer's Hindsight
+// code. curl must already be started with curl_global_init. Set
+// HINDSIGHT_CONNECT_URL (say, to http://localhost:3000) to test against a local
+// Digital Ground Game Connect.
 
 // DMs content to the streamer. Blocks for up to about 15 seconds, or twice
 // that if the first try hit a server or Discord hiccup, so call it off the
 // audio and UI threads. Setting cancel stops it within a second or so.
 ConnectReply connect_send_message(const std::string &code, const std::string &content, const std::atomic<bool> &cancel);
 
-// The Test button: asks DGG Connect to send a fixed test DM, on its own thread.
+// The Test button: asks Digital Ground Game Connect to send a fixed test DM, on
+// its own thread.
 enum class ConnectTestState { idle, testing, done };
 struct ConnectTestStatus {
 	ConnectTestState state = ConnectTestState::idle;

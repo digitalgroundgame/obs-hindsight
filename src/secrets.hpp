@@ -28,9 +28,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 struct Secrets {
 	std::string claude_api_key;
 	std::string discord_bot_token;
-	// Links the plugin to the streamer's Discord account on DGG Connect, which
-	// sends them the answers. Replaces the bot token once the
-	// HINDSIGHT_ACCESS_CODES build option is on.
+	// Links the plugin to the streamer's Discord account on Digital Ground
+	// Game Connect, which sends them the answers. Replaces the bot token
+	// once the HINDSIGHT_ACCESS_CODES build option is on.
 	std::string hindsight_code;
 };
 
@@ -43,8 +43,9 @@ constexpr const char *kHindsightCodeName = "hindsight_code";
 // often carry a stray space or newline.
 std::string clean_key(const std::string &key);
 
-// Whether a cleaned code has DGG Connect's format: "dgc_" followed by 43
-// base64url characters. Catches a code pasted short or the wrong thing pasted.
+// Whether a cleaned code has Digital Ground Game Connect's format: "dgc_"
+// followed by 43 base64url characters. Catches a code pasted short or the wrong
+// thing pasted.
 bool is_hindsight_code(const std::string &code);
 
 // Which key, for forgetting one at a time.

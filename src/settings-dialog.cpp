@@ -404,7 +404,8 @@ QLabel *add_note(QLayout *layout, const char *note, const char *details, QWidget
 	return label;
 }
 
-// The DGG logo and a link to the website, above the Save button.
+// The Digital Ground Game logo and a link to the website, above the Save
+// button.
 void add_footer(QVBoxLayout *layout, QWidget *parent)
 {
 	auto *footer = new QHBoxLayout();
