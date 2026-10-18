@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include "claude-answer.hpp"
+#include "claude-app.hpp"
 
 #include <string>
 
@@ -53,3 +54,10 @@ bool plugin_settings_use_own_bot();
 
 // Saves both. Returns false if the file could not be written.
 bool plugin_settings_set_discord(const std::string &user_id, bool use_own_bot);
+
+// Where the hotkey sends what it heard. Discord unless the streamer picked
+// the Claude app; a missing or unreadable file counts as Discord.
+AnswerDestination plugin_settings_destination();
+
+// Saves the choice. Returns false if the file could not be written.
+bool plugin_settings_set_destination(AnswerDestination destination);

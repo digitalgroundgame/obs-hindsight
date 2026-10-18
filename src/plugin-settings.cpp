@@ -36,6 +36,7 @@ constexpr const char *kWebSearch = "web_search";
 constexpr const char *kWebFetch = "web_fetch";
 constexpr const char *kDiscordUserId = "discord_user_id";
 constexpr const char *kUseOwnBot = "use_own_bot";
+constexpr const char *kSendTo = "send_to";
 
 // So a read never sees a save half done, and two saves don't undo each other.
 std::mutex settings_lock;
@@ -61,6 +62,7 @@ obs_data_t *read_settings(const std::string &path)
 	obs_data_set_default_bool(data, kWebSearch, true);
 	obs_data_set_default_bool(data, kWebFetch, false);
 	obs_data_set_default_bool(data, kUseOwnBot, false);
+	obs_data_set_default_string(data, kSendTo, answer_destination_id(AnswerDestination::discord));
 	return data;
 }
 
@@ -152,5 +154,22 @@ bool plugin_settings_set_discord(const std::string &user_id, bool use_own_bot)
 	return save_settings([&user_id, use_own_bot](obs_data_t *data) {
 		obs_data_set_string(data, kDiscordUserId, user_id.c_str());
 		obs_data_set_bool(data, kUseOwnBot, use_own_bot);
+	});
+}
+
+AnswerDestination plugin_settings_destination()
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	obs_data_t *data = read_settings(settings_path());
+	const AnswerDestination destination = answer_destination_from_id(obs_data_get_string(data, kSendTo));
+	obs_data_release(data);
+	return destination;
+}
+
+bool plugin_settings_set_destination(AnswerDestination destination)
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	return save_settings([destination](obs_data_t *data) {
+		obs_data_set_string(data, kSendTo, answer_destination_id(destination));
 	});
 }

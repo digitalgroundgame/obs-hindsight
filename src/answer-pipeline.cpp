@@ -17,6 +17,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "answer-pipeline.hpp"
+#include "claude-app-open.hpp"
+#include "claude-app.hpp"
 #include "claude-client.hpp"
 #include "connect-client.hpp"
 #include "discord-client.hpp"
@@ -128,6 +130,16 @@ void answer(const Clip &clip)
 		return;
 	}
 	obs_log(LOG_INFO, "heard (%.1f s): %s", seconds_since(start), transcript.text.c_str());
+
+	// The Claude app answers with the streamer's own Claude plan, so
+	// Hindsight doesn't ask Claude itself.
+	if (plugin_settings_destination() == AnswerDestination::claude_app) {
+		if (claude_app_open(claude_app_link(transcript.text)))
+			obs_log(LOG_INFO,
+				"opened a new chat in the Claude app with that (%.1f s in all); send it there",
+				seconds_since(start));
+		return;
+	}
 
 	const std::string api_key = secret_store_get().claude_api_key;
 	if (api_key.empty()) {

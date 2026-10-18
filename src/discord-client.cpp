@@ -138,7 +138,9 @@ DiscordReply call(const std::string &path, const std::string &bot_token, const s
 		DiscordReply reply = parse(response.status, response.body);
 		if (reply.error != "rate_limited" || attempt > 0 || reply.retry_after > kMaxRetryAfterSeconds)
 			return reply;
-		if (!wait(std::max(reply.retry_after, 0.5), cancel))
+		// (std::max): curl.h brings in windows.h on Windows, whose max macro
+		// would otherwise take the call over.
+		if (!wait((std::max)(reply.retry_after, 0.5), cancel))
 			return failed("cancelled", {});
 	}
 }

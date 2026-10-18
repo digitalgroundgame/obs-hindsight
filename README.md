@@ -98,7 +98,12 @@ Discord DMs, and writes them to the OBS log.
    **Fetch web pages from the search results** (off by default) also lets
    Claude open up to two pages it found when a snippet isn't enough; there's
    no fee, but the page text adds to the token cost and the wait.
-3. For the Discord DMs, click **Get a code**, sign in with Discord, and paste
+   To have your Claude plan answer instead, set **Send questions to** to
+   **Claude app**. Hindsight then skips the API key: the hotkey opens a new
+   chat in the [Claude desktop app](https://claude.com/download) with what it
+   heard, and you press send there. The Claude window opens on top of your
+   game, so with Display Capture your viewers see it.
+3. For the Discord DMs (skip this with the Claude app), click **Get a code**, sign in with Discord, and paste
    your Hindsight code under **Keys**; **Test** sends you a test DM. To use
    your own Discord bot instead, click **Use your own Discord bot instead** and
    enter its bot token and your Discord user ID (turn on Developer Mode under

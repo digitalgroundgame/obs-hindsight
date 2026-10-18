@@ -17,6 +17,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "settings-dialog.hpp"
+#include "claude-app-open.hpp"
+#include "claude-app.hpp"
 #include "clip-cleanup.hpp"
 #include "connect-client.hpp"
 #include "discord-api.hpp"
@@ -69,6 +71,9 @@ constexpr const char *kDggUrl = "https://digitalgroundgame.org";
 
 // Hindsight's own page, the footer's Help link.
 constexpr const char *kHelpUrl = "https://connect.digitalgroundgame.org/hindsight";
+
+// Where a streamer downloads the Claude desktop app.
+constexpr const char *kGetClaudeAppUrl = "https://claude.com/download";
 
 #ifdef HINDSIGHT_ACCESS_CODES
 // Where a streamer signs in with Discord to get their Hindsight code.
@@ -704,6 +709,22 @@ void open_settings_dialog(void *)
 	status->setColumnStretch(1, 1);
 	layout->addWidget(status_box);
 
+	// Answers: where the hotkey sends what it heard. Saved with Save or
+	// Apply; the next question goes there.
+	auto *send_box = new QGroupBox(text("Hindsight.SendToTitle"), &dialog);
+	auto *send_layout = new QVBoxLayout(send_box);
+	auto *send_form = new QFormLayout();
+	send_layout->addLayout(send_form);
+	layout->addWidget(send_box);
+	AnswerDestination was_destination = plugin_settings_destination();
+	auto *send_to = new QComboBox(&dialog);
+	send_to->addItem(text("Hindsight.SendToDiscord"), static_cast<int>(AnswerDestination::discord));
+	send_to->addItem(text("Hindsight.SendToClaudeApp"), static_cast<int>(AnswerDestination::claude_app));
+	send_to->setCurrentIndex(send_to->findData(static_cast<int>(was_destination)));
+	send_to->setToolTip(text("Hindsight.SendToNote"));
+	send_form->addRow(info_label("Hindsight.SendTo", send_to->toolTip(), send_to, &dialog), send_to);
+	QLabel *on_top_note = add_note(send_layout, "Hindsight.ClaudeAppOnTop", "Hindsight.SendToNote", &dialog);
+
 	// Keys: the boxes to type them in. Each key's line in Status comes first.
 	auto *keys_box = new QGroupBox(text("Hindsight.KeysTitle"), &dialog);
 	auto *keys = new QVBoxLayout(keys_box);
@@ -781,6 +802,17 @@ void open_settings_dialog(void *)
 #endif
 	layout->addWidget(keys_box);
 
+	// Whether the Claude app is there to open, shown while it's picked. It is
+	// checked when the window opens; reopen the window after installing it.
+	const StatusLine claude_app = add_status_line(status, &dialog);
+	auto *get_claude_app = new QPushButton(text("Hindsight.GetClaudeApp"), &dialog);
+	claude_app.buttons->addWidget(get_claude_app);
+	const bool app_installed = claude_app_installed();
+	show_status(claude_app, app_installed ? Mark::good : Mark::attention,
+		    text(app_installed ? "Hindsight.ClaudeAppFound" : "Hindsight.ClaudeAppMissing"));
+	QObject::connect(get_claude_app, &QPushButton::clicked, &dialog,
+			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetClaudeAppUrl))); });
+
 	add_model_row(status, &dialog);
 	add_update_line(status, &dialog);
 
@@ -839,6 +871,33 @@ void open_settings_dialog(void *)
 	claude_form->addRow(with_info(web_fetch, web_fetch->toolTip(), &dialog));
 	QObject::connect(web_search, &QCheckBox::toggled, web_fetch, &QCheckBox::setEnabled);
 
+	// The Claude app needs no keys and picks its own model, so while it's
+	// chosen only what it uses is shown. This follows the dropdown before
+	// Save, so the streamer sees what they're choosing.
+	auto show_destination = [&, get_claude_app, app_installed]() {
+		const bool app = send_to->currentData().toInt() == static_cast<int>(AnswerDestination::claude_app);
+		keys_box->setVisible(!app);
+		claude_box->setVisible(!app);
+		set_status_visible(claude.status, !app);
+#ifdef HINDSIGHT_ACCESS_CODES
+		// Back on Discord, the code's or the bot's line shows as before.
+		if (app) {
+			set_status_visible(code.status, false);
+			set_status_visible(discord.status, false);
+		} else {
+			show_delivery();
+		}
+#else
+		set_status_visible(discord.status, !app);
+#endif
+		set_status_visible(claude_app, app);
+		get_claude_app->setVisible(app && !app_installed);
+		on_top_note->setVisible(app);
+		fit_window();
+	};
+	show_destination();
+	QObject::connect(send_to, &QComboBox::currentIndexChanged, &dialog, show_destination);
+
 	// More: the update check setting and the saved clips.
 	auto *more_box = new QGroupBox(text("Hindsight.MoreTitle"), &dialog);
 	auto *more = new QVBoxLayout(more_box);
@@ -887,6 +946,7 @@ void open_settings_dialog(void *)
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
 		const bool checking = check_updates->isChecked();
+		const auto destination = static_cast<AnswerDestination>(send_to->currentData().toInt());
 		ClaudeOptions options;
 		options.auto_model = auto_model->isChecked();
 		options.model = model->currentData().toString().toStdString();
@@ -936,13 +996,16 @@ void open_settings_dialog(void *)
 			if (clean_key(row->edit->text().toStdString()).empty() &&
 			    !saved_key(was_keys, row->key).empty())
 				keys_saved = secret_store_forget(row->key) && keys_saved;
-		if (!setting_saved || !options_saved || !discord_saved || !keys_saved) {
+		const bool destination_saved = destination == was_destination ||
+					       plugin_settings_set_destination(destination);
+		if (!setting_saved || !options_saved || !discord_saved || !destination_saved || !keys_saved) {
 			error->setText(text("Hindsight.SaveFailed"));
 			error->show();
 			return false;
 		}
 		was_checking = checking;
 		was_options = options;
+		was_destination = destination;
 		was_user_id = typed_user_id;
 		was_own_bot = use_own_bot;
 		user_id->setText(QString::fromStdString(typed_user_id));
@@ -963,9 +1026,7 @@ void open_settings_dialog(void *)
 		show_saved_state(code, now);
 #endif
 		show_saved_state(discord, now);
-#ifdef HINDSIGHT_ACCESS_CODES
-		show_delivery();
-#endif
+		show_destination();
 	});
 
 	// Every button beside a box or a status line has the same width, so they
