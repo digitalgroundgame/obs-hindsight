@@ -364,6 +364,7 @@ void add_update_notice(obs_properties_t *props, HindsightFilter *filter)
 		obs_property_t *button = obs_properties_add_button2(
 			props, "update_now", obs_module_text("Hindsight.UpdateNow"), on_update_now_clicked, filter);
 		obs_property_set_enabled(button, notice.update_now_enabled);
+		obs_property_set_long_description(button, obs_module_text("Hindsight.UpdateNowTip"));
 	}
 
 	if (notice.offer_release_page || !filter) {
