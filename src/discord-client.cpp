@@ -150,7 +150,7 @@ DiscordReply discord_send_dm(const std::string &bot_token, const std::string &us
 {
 	// Discord returns the existing DM channel if there is one, so opening it
 	// for each answer is safe; answers are far too rare to hit its limits.
-	const DiscordReply channel =
+	DiscordReply channel =
 		call("/users/@me/channels", bot_token, build_discord_open_dm(user_id), parse_discord_open_dm, cancel);
 	if (!channel.ok)
 		return channel;
