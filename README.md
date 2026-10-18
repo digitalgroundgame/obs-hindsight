@@ -75,8 +75,8 @@ uninstall, delete it.
 If you rename it, update the link in cmake/windows/resources/installer-Windows.iss. -->
 
 This is an early test build. The hotkey transcribes the last 30 seconds of your
-mic on your PC, asks Claude for the question and answer, and writes them to the
-OBS log. It does not message Discord yet.
+mic on your PC, asks Claude for the question and answer, sends them to your
+Discord DMs, and writes them to the OBS log.
 
 1. [Install the plugin](#installing) and start OBS. Wait a minute or two for
    the speech models to download. **Tools > Hindsight settings** shows the
@@ -86,17 +86,33 @@ OBS log. It does not message Discord yet.
    **Save**. Create the key on the
    [API keys](https://platform.claude.com/settings/keys) page of the Claude
    Console with a workspace selected; a key without a workspace is rejected.
-   Claude searches the web for questions about current events (up to three
-   searches a question, at $0.01 each on your key), so keep web search turned
-   on under [Capabilities](https://platform.claude.com/settings/capabilities).
-3. Open your mic's **Filters**, add **Hindsight**, and close the window.
-4. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
+   Under **Claude**, **Pick the model automatically** (on by default) has
+   Claude Haiku check each question first: quick facts stay on Haiku, the
+   fastest and cheapest, and harder questions go to Claude Sonnet. Turn it
+   off to choose the model yourself. You can also choose whether Claude may
+   search the web. With **Search
+   the web for current information** on (the default), Claude looks up
+   current events (up to three searches a question, at $0.01 each on your
+   key), so keep web search turned on under
+   [Capabilities](https://platform.claude.com/settings/capabilities) too.
+   **Fetch web pages from the search results** (off by default) also lets
+   Claude open up to two pages it found when a snippet isn't enough; there's
+   no fee, but the page text adds to the token cost and the wait.
+3. For the Discord DMs, click **Get a code**, sign in with Discord, and paste
+   your Hindsight code under **Keys**; **Test** sends you a test DM. To use
+   your own Discord bot instead, click **Use your own Discord bot instead** and
+   enter its bot token and your Discord user ID (turn on Developer Mode under
+   User Settings > Advanced, then right-click your name and click **Copy User
+   ID**). The bot must be in a server you're in, and you must allow DMs from
+   that server's members.
+4. Open your mic's **Filters**, add **Hindsight**, and close the window.
+5. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
    last question" under it.
-5. Ask a question out loud, then press the hotkey (or click **Save the last
+6. Ask a question out loud, then press the hotkey (or click **Save the last
    clip now** in the filter's settings).
-6. **Help > Log Files > View Current Log** shows what Hindsight heard, the
+7. **Help > Log Files > View Current Log** shows what Hindsight heard, the
    question Claude found and its answer, with timings, plus where the clip was
-   saved as a WAV. Hindsight keeps the last 10 clips; **Delete saved clips**
+   saved as a WAV. Hindsight keeps the last 10 clips; **Delete clips**
    in Tools > Hindsight settings removes them all. Because the log holds what
    you said, check it before sharing it publicly.
 
@@ -106,7 +122,7 @@ Each time OBS starts, Hindsight asks GitHub once for the latest release. If a
 newer one is out, the top of the Hindsight filter's settings and of **Tools >
 Hindsight settings** says so, and the OBS log notes it. If GitHub cannot be
 reached, Hindsight carries on without a notice. When there is no notice,
-**Tools > Hindsight settings** has a **Check for updates** button to ask again
+**Tools > Hindsight settings** has a **Check now** button to ask again
 at any time.
 
 On Windows the notice has an **Update now** button. It downloads the new
@@ -116,7 +132,7 @@ prompt, then **Install**. The installer closes OBS for you, and its last page
 offers to start OBS again. The button waits while you are streaming or
 recording, since the update closes OBS. If the download or the check fails, the
 notice says so and offers the release page instead. On other systems the notice
-has a **Download the update** button that opens the release page.
+has a **Download** button that opens the release page.
 
 ### What the update check sends
 

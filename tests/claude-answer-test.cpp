@@ -49,7 +49,7 @@ void request_thinks_offers_the_tools_and_carries_the_transcript()
 	const json request = json::parse(build_claude_request("what year did \"the wall\" fall\n",
 							      "Friday, October 16, 2026, 2:48 AM (UTC-04:00)"));
 
-	CHECK(request["model"] == kClaudeModel);
+	CHECK(request["model"] == kDefaultClaudeModel.id);
 	CHECK(request["max_tokens"] == kClaudeMaxTokens);
 	CHECK(request["thinking"]["type"] == "adaptive");
 	CHECK(request["output_config"]["effort"] == kClaudeEffort);
@@ -72,6 +72,51 @@ void request_thinks_offers_the_tools_and_carries_the_transcript()
 	const json undated = json::parse(build_claude_request("hi", ""));
 	CHECK(undated["messages"][0]["content"].get<std::string>().find("Current local time") == std::string::npos);
 	CHECK(request["system"].get<std::string>().find("1,700") != std::string::npos);
+	CHECK(request["system"].get<std::string>().find("Search the web first") != std::string::npos);
+	// Web fetch starts off.
+	CHECK(request["system"].get<std::string>().find("fetch") == std::string::npos);
+}
+
+void web_fetch_comes_with_web_search()
+{
+	ClaudeOptions options;
+	options.web_fetch = true;
+	const json request = json::parse(build_claude_request("who won", "", options));
+	CHECK(request["tools"].size() == 3);
+	CHECK(request["tools"][0]["name"] == "web_search");
+	CHECK(request["tools"][1]["type"] == "web_fetch_20250910");
+	CHECK(request["tools"][1]["name"] == "web_fetch");
+	CHECK(request["tools"][1]["max_uses"] == kClaudeMaxFetches);
+	CHECK(request["tools"][1]["max_content_tokens"] == kClaudeMaxFetchTokens);
+	CHECK(request["tools"][2]["name"] == "send_answer");
+	CHECK(request["system"].get<std::string>().find("fetch that page") != std::string::npos);
+
+	// Claude can only fetch pages it found, so without search there's no fetch.
+	options.web_search = false;
+	const json no_search = json::parse(build_claude_request("who won", "", options));
+	CHECK(no_search["tools"].size() == 1);
+	CHECK(no_search["system"].get<std::string>().find("fetch") == std::string::npos);
+}
+
+void request_follows_the_streamers_choices()
+{
+	ClaudeOptions options;
+	options.model = "claude-opus-5-5";
+	options.web_search = false;
+	const json request = json::parse(build_claude_request("who won", "", options));
+	CHECK(request["model"] == "claude-opus-5-5");
+	// Without web search, only the answer tool is offered, and the prompt
+	// says Claude can't search.
+	CHECK(request["tools"].size() == 1);
+	CHECK(request["tools"][0]["name"] == "send_answer");
+	const std::string system = request["system"];
+	CHECK(system.find("Search the web first") == std::string::npos);
+	CHECK(system.find("can't search the web") != std::string::npos);
+	CHECK(system.find("send_answer") != std::string::npos);
+
+	// A model Hindsight no longer offers goes out as the default.
+	options.model = "claude-haiku-4-5";
+	CHECK(json::parse(build_claude_request("who won", "", options))["model"] == kDefaultClaudeModel.id);
 }
 
 void request_survives_bad_utf8()
@@ -141,6 +186,13 @@ void plain_text_after_searching_is_the_answer()
 	CHECK(answer.question.empty());
 	CHECK(answer.answer == "The Lakers won 112-108. Sources: AP");
 	CHECK(answer.web_searches == 1);
+
+	// A fetched page counts as a result too: only the text after it is the answer.
+	const ClaudeAnswer fetched = parse_claude_response(
+		200,
+		R"({"stop_reason":"end_turn","content":[{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{"query":"q"}},{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[]},{"type":"text","text":"Let me open that."},{"type":"server_tool_use","id":"srvtoolu_2","name":"web_fetch","input":{"url":"https://example.com"}},{"type":"web_fetch_tool_result","tool_use_id":"srvtoolu_2","content":{"type":"web_fetch_result","url":"https://example.com","content":{"type":"document","source":{"type":"text","media_type":"text/plain","data":"page"}}}},{"type":"text","text":"It opens Friday."}],"usage":{"input_tokens":10,"output_tokens":20,"server_tool_use":{"web_search_requests":1,"web_fetch_requests":1}}})");
+	CHECK(fetched.outcome == ClaudeAnswer::Outcome::answered);
+	CHECK(fetched.answer == "It opens Friday.");
 }
 
 void pause_turn_resumes_with_the_content()
@@ -154,17 +206,17 @@ void pause_turn_resumes_with_the_content()
 
 	// The content goes back unchanged as the assistant's message.
 	const json request = json::parse(build_claude_request(
-		"who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)", paused.paused_content));
+		"who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)", {}, paused.paused_content));
 	CHECK(request["messages"].size() == 2);
 	CHECK(request["messages"][1]["role"] == "assistant");
 	CHECK(request["messages"][1]["content"] == json::parse(paused_reply)["content"]);
 
 	// A resumed turn gets only the searches it has left.
-	CHECK(json::parse(build_claude_request("who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)",
+	CHECK(json::parse(build_claude_request("who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)", {},
 					       paused.paused_content, 2))["tools"][0]["max_uses"] == 2);
 
 	// Content that is not a JSON array is left out rather than sent.
-	CHECK(json::parse(build_claude_request("who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)",
+	CHECK(json::parse(build_claude_request("who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)", {},
 					       "oops"))["messages"]
 		      .size() == 1);
 }
@@ -176,12 +228,15 @@ void reads_the_usage_and_cost()
 		R"({"content":[{"type":"tool_use","name":"send_answer","input":{"question":"Q?","answer":"A."}}],"usage":{"input_tokens":812,"output_tokens":95}})");
 	CHECK(answer.input_tokens == 812);
 	CHECK(answer.output_tokens == 95);
-	// 812 at $0.10 and 95 at $0.50 per million tokens.
 	CHECK(answer.web_searches == 0);
-	CHECK(std::fabs(claude_cost_dollars(812, 95, 0) - 0.0001287) < 1e-12);
-	CHECK(claude_cost_dollars(0, 0, 0) == 0.0);
+	// On Haiku, 812 at $0.10 and 95 at $0.50 per million tokens.
+	const ClaudeModel haiku = claude_model("claude-haiku-5-5");
+	CHECK(std::fabs(claude_cost_dollars(haiku, 812, 95, 0) - 0.0001287) < 1e-12);
+	CHECK(claude_cost_dollars(haiku, 0, 0, 0) == 0.0);
 	// Each search is $0.01 on top of the tokens.
-	CHECK(std::fabs(claude_cost_dollars(812, 95, 2) - 0.0201287) < 1e-12);
+	CHECK(std::fabs(claude_cost_dollars(haiku, 812, 95, 2) - 0.0201287) < 1e-12);
+	// On Opus, $4 and $20 per million.
+	CHECK(std::fabs(claude_cost_dollars(claude_model("claude-opus-5-5"), 812, 95, 0) - 0.005148) < 1e-12);
 
 	// No usage in the reply reads as zero rather than failing.
 	const ClaudeAnswer no_usage = parse_claude_response(200, tool_reply("Q?", "A."));
@@ -218,6 +273,10 @@ void reads_api_errors()
 		400,
 		R"({"type":"error","error":{"type":"invalid_request_error","message":"Web search is not enabled for this organization."}})");
 	CHECK(no_search.error_type == kWebSearchDisabledError);
+	const ClaudeAnswer no_fetch = parse_claude_response(
+		400,
+		R"({"type":"error","error":{"type":"invalid_request_error","message":"Web fetch is not enabled for this organization."}})");
+	CHECK(no_fetch.error_type == kWebSearchDisabledError);
 
 	const ClaudeAnswer other_400 = parse_claude_response(
 		400, R"({"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too large"}})");
@@ -280,6 +339,8 @@ int main()
 	// The tests build JSON with nlohmann/json, which throws on misuse.
 	try {
 		request_thinks_offers_the_tools_and_carries_the_transcript();
+		request_follows_the_streamers_choices();
+		web_fetch_comes_with_web_search();
 		request_survives_bad_utf8();
 		reads_the_question_and_answer();
 		skips_thinking_blocks();
