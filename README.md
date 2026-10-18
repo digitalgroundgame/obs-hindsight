@@ -3,7 +3,7 @@
 An OBS plugin that answers questions asked on stream. The streamer asks a
 question out loud, presses a hotkey (or a Stream Deck button), and Hindsight
 transcribes the last 30 seconds of their mic on the PC, asks Claude, and sends
-the answer to Discord or other destinations.
+the answer to Discord or your selected destination.
 
 Design plan: [#1](https://github.com/digitalgroundgame/obs-hindsight/issues/1).
 
