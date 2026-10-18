@@ -6,16 +6,21 @@ project(${_name} VERSION ${_version})
 
 option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" ON)
 option(ENABLE_QT "Use Qt functionality" ON)
-# Asks for a Hindsight code from DGG Connect instead of a Discord bot token
-# (Tools > Hindsight settings) and Discord user ID (filter settings). CI builds
-# turn it on when the HINDSIGHT_ACCESS_CODES repository variable is true; local
-# builds can set the environment variable or pass -DHINDSIGHT_ACCESS_CODES=ON.
+# Asks for a Hindsight code from Digital Ground Game Connect instead of a
+# Discord bot token (Tools > Hindsight settings) and Discord user ID (filter
+# settings). CI builds turn it on when the HINDSIGHT_ACCESS_CODES repository
+# variable is true; local builds can set the environment variable or pass
+# -DHINDSIGHT_ACCESS_CODES=ON.
 if("$ENV{HINDSIGHT_ACCESS_CODES}")
   set(_hindsight_access_codes_default ON)
 else()
   set(_hindsight_access_codes_default OFF)
 endif()
-option(HINDSIGHT_ACCESS_CODES "Ask for a DGG Connect code in Hindsight settings" ${_hindsight_access_codes_default})
+option(
+  HINDSIGHT_ACCESS_CODES
+  "Ask for a Digital Ground Game Connect code in Hindsight settings"
+  ${_hindsight_access_codes_default}
+)
 
 include(compilerconfig)
 include(defaults)

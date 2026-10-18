@@ -30,12 +30,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 namespace {
 
-// DGG Connect's replies are a few hundred bytes.
+// Digital Ground Game Connect's replies are a few hundred bytes.
 constexpr size_t kMaxResponseBytes = 64 * 1024;
 
-// DGG Connect gives Discord 12 seconds, so 15 leaves room for the trip there
-// and back. No separate connect limit: on Windows one cut off requests after
-// the connection was open (see claude-client.cpp).
+// Digital Ground Game Connect gives Discord 12 seconds, so 15 leaves room for
+// the trip there and back. No separate connect limit: on Windows one cut off
+// requests after the connection was open (see claude-client.cpp).
 constexpr long kRequestTimeoutSeconds = 15;
 
 size_t append_body(char *data, size_t size, size_t count, void *user)
@@ -54,7 +54,8 @@ int on_progress(void *user, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
 	return static_cast<const std::atomic<bool> *>(user)->load() ? 1 : 0;
 }
 
-// HINDSIGHT_CONNECT_URL, if set, for testing against a local DGG Connect.
+// HINDSIGHT_CONNECT_URL, if set, for testing against a local Digital Ground
+// Game Connect.
 const char *custom_url()
 {
 	const char *custom = std::getenv("HINDSIGHT_CONNECT_URL");
@@ -112,7 +113,7 @@ ConnectReply post(const char *path, const std::string &code, const std::string &
 		return failed("cancelled", {});
 	if (result != CURLE_OK)
 		return failed("network",
-			      std::string("Couldn't reach DGG Connect (") + curl_easy_strerror(result) +
+			      std::string("Couldn't reach Digital Ground Game Connect (") + curl_easy_strerror(result) +
 				      "). Check your internet connection.",
 			      true);
 	return parse_connect_response(status, response);
@@ -138,9 +139,10 @@ void run_test(const std::string &code)
 {
 	ConnectReply reply = post(kConnectTestPath, code, {}, test_stopping);
 	if (reply.ok)
-		obs_log(LOG_INFO, "DGG Connect test: sent a test DM to %s", reply.discord_name.c_str());
+		obs_log(LOG_INFO, "Digital Ground Game Connect test: sent a test DM to %s", reply.discord_name.c_str());
 	else if (reply.error != "cancelled")
-		obs_log(LOG_WARNING, "DGG Connect test failed (%s): %s", reply.error.c_str(), reply.message.c_str());
+		obs_log(LOG_WARNING, "Digital Ground Game Connect test failed (%s): %s", reply.error.c_str(),
+			reply.message.c_str());
 	std::lock_guard<std::mutex> guard(test_lock);
 	test_status.state = ConnectTestState::done;
 	test_status.reply = std::move(reply);
@@ -154,8 +156,8 @@ ConnectReply connect_send_message(const std::string &code, const std::string &co
 	ConnectReply reply = post(kConnectMessagesPath, code, body, cancel);
 	if (!reply.ok && reply.retry && wait(2, cancel)) {
 		obs_log(LOG_WARNING, "sending to Discord failed (%s); trying once more", reply.error.c_str());
-		// The same id, so DGG Connect sends it once even if the first try got
-		// through.
+		// The same id, so Digital Ground Game Connect sends it once
+		// even if the first try got through.
 		reply = post(kConnectMessagesPath, code, body, cancel);
 	}
 	return reply;

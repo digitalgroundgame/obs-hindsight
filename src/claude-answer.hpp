@@ -44,8 +44,8 @@ constexpr int kClaudeMaxTokens = 4096;
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool#max-uses
 constexpr int kClaudeMaxSearches = 3;
 
-// The longest answer Claude is asked for. The DGG server cuts anything
-// longer, so this keeps answers whole.
+// The longest answer Claude is asked for. The Digital Ground Game server cuts
+// anything longer, so this keeps answers whole.
 constexpr size_t kMaxAnswerCharacters = 1700;
 
 // What the streamer chose in Hindsight settings.
