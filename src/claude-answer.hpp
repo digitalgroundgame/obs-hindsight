@@ -55,6 +55,10 @@ struct ClaudeOptions {
 	bool auto_model = true;
 	std::string model = kDefaultClaudeModel.id; // a ClaudeModel id
 	bool web_search = true;
+	// Let Claude open pages it found by searching. Used only with
+	// web_search, since Claude can only fetch addresses already in the
+	// conversation.
+	bool web_fetch = false;
 };
 
 // The JSON body for POST /v1/messages: the transcript of the last few seconds
@@ -81,6 +85,10 @@ inline constexpr const char *kWorkspaceKeyError = "workspace_key";
 // API refuses any request that offers it. They can turn it back on in the
 // Claude Console.
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool#how-to-use-web-search
+// At most this many pages per question, each cut to this many tokens, so
+// fetching can't run up the cost or the wait.
+inline constexpr int kClaudeMaxFetches = 2;
+inline constexpr int kClaudeMaxFetchTokens = 8000;
 inline constexpr const char *kWebSearchDisabledError = "web_search_disabled";
 
 struct ClaudeAnswer {

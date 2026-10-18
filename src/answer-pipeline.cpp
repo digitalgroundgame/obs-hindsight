@@ -183,7 +183,7 @@ void answer(const Clip &clip)
 				"answering stopped: this Claude API key isn't tied to a workspace. In the Claude Console, create a key with a workspace selected and enter it in Tools > Hindsight settings");
 		else if (reply.error_type == kWebSearchDisabledError)
 			obs_log(LOG_WARNING,
-				"answering stopped: web search is turned off for your Claude organization. An admin can turn it on in the Claude Console under Settings > Capabilities, or you can turn off Search the web in Tools > Hindsight settings");
+				"answering stopped: web search or fetch is turned off for your Claude organization. An admin can turn it on in the Claude Console under Settings > Capabilities, or you can turn off Search the web or Fetch web pages in Tools > Hindsight settings");
 		else if (reply.error_type != "cancelled")
 			obs_log(LOG_WARNING, "answering stopped: the Claude request failed (%s) %s",
 				reply.error_type.c_str(), reply.error_message.c_str());

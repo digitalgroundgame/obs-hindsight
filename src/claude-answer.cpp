@@ -29,9 +29,10 @@ namespace {
 
 constexpr const char *kToolName = "send_answer";
 constexpr const char *kSearchToolType = "web_search_20250305";
+constexpr const char *kFetchToolType = "web_fetch_20250910";
 
-// The system prompt is these three parts, with the one that fits whether web
-// search is on in the middle.
+// The system prompt is these parts, with the ones that fit whether web search
+// and fetch are on in the middle.
 const char *const kPromptStart =
 	"You help a live streamer. You get an automatic transcript of the last few seconds of their microphone. "
 	"It may start mid-sentence and may have transcription mistakes.\n\n"
@@ -46,6 +47,10 @@ const char *const kPromptSearch =
 	"events, scores, prices or who holds a post now, and answer from what you find. When you searched, name "
 	"your sources briefly at the end of the answer (for example \"Sources: Reuters, AP\"). Answer stable "
 	"knowledge without searching.\n\n";
+
+const char *const kPromptFetch =
+	"When a search result looks right but its snippet doesn't hold the answer, you can fetch that page. "
+	"Fetch only when you need to.\n\n";
 
 const char *const kPromptNoSearch =
 	"You can't search the web. When the answer depends on current or recent information, such as news, "
@@ -87,7 +92,8 @@ bool is_web_search_disabled(std::string message)
 	std::transform(message.begin(), message.end(), message.begin(),
 		       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 	return message.find("not enabled") != std::string::npos &&
-	       (message.find("web search") != std::string::npos || message.find("web_search") != std::string::npos);
+	       (message.find("web search") != std::string::npos || message.find("web_search") != std::string::npos ||
+		message.find("web fetch") != std::string::npos || message.find("web_fetch") != std::string::npos);
 }
 
 ClaudeAnswer failure(std::string type, std::string message = {})
@@ -172,6 +178,17 @@ std::string build_claude_request(const std::string &transcript, const std::strin
 			{"max_uses", max_searches},
 		});
 	}
+	const bool web_fetch = options.web_search && options.web_fetch;
+	if (web_fetch) {
+		// Basic web fetch, for the same reason. Citations stay off: the
+		// answer names its sources itself.
+		tools.push_back({
+			{"type", kFetchToolType},
+			{"name", "web_fetch"},
+			{"max_uses", kClaudeMaxFetches},
+			{"max_content_tokens", kClaudeMaxFetchTokens},
+		});
+	}
 	tools.push_back({
 		{"name", kToolName},
 		{"description", "Send the question you found and your answer to the streamer."},
@@ -179,8 +196,8 @@ std::string build_claude_request(const std::string &transcript, const std::strin
 		{"strict", true},
 	});
 
-	const std::string system =
-		std::string(kPromptStart) + (options.web_search ? kPromptSearch : kPromptNoSearch) + kPromptEnd;
+	const std::string system = std::string(kPromptStart) + (options.web_search ? kPromptSearch : kPromptNoSearch) +
+				   (web_fetch ? kPromptFetch : "") + kPromptEnd;
 
 	const json request = {
 		{"model", claude_model(options.model).id},
@@ -258,7 +275,7 @@ ClaudeAnswer parse_claude_response(long status, const std::string &body)
 			text_after_search += string_at(block, "text");
 			continue;
 		}
-		if (type == "web_search_tool_result") {
+		if (type == "web_search_tool_result" || type == "web_fetch_tool_result") {
 			searched = true;
 			text_after_search.clear();
 			continue;

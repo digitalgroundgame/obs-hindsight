@@ -33,6 +33,7 @@ constexpr const char *kCheckForUpdates = "check_for_updates";
 constexpr const char *kAutoModel = "auto_model";
 constexpr const char *kClaudeModelKey = "claude_model";
 constexpr const char *kWebSearch = "web_search";
+constexpr const char *kWebFetch = "web_fetch";
 constexpr const char *kDiscordUserId = "discord_user_id";
 constexpr const char *kUseOwnBot = "use_own_bot";
 
@@ -58,6 +59,7 @@ obs_data_t *read_settings(const std::string &path)
 	obs_data_set_default_bool(data, kAutoModel, true);
 	obs_data_set_default_string(data, kClaudeModelKey, kDefaultClaudeModel.id);
 	obs_data_set_default_bool(data, kWebSearch, true);
+	obs_data_set_default_bool(data, kWebFetch, false);
 	obs_data_set_default_bool(data, kUseOwnBot, false);
 	return data;
 }
@@ -110,6 +112,7 @@ ClaudeOptions plugin_settings_claude_options()
 	// A model this version doesn't offer reads as the default.
 	options.model = claude_model(obs_data_get_string(data, kClaudeModelKey)).id;
 	options.web_search = obs_data_get_bool(data, kWebSearch);
+	options.web_fetch = obs_data_get_bool(data, kWebFetch);
 	obs_data_release(data);
 	return options;
 }
@@ -121,6 +124,7 @@ bool plugin_settings_set_claude_options(const ClaudeOptions &options)
 		obs_data_set_bool(data, kAutoModel, options.auto_model);
 		obs_data_set_string(data, kClaudeModelKey, claude_model(options.model).id);
 		obs_data_set_bool(data, kWebSearch, options.web_search);
+		obs_data_set_bool(data, kWebFetch, options.web_fetch);
 	});
 }
 

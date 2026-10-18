@@ -595,6 +595,15 @@ void open_settings_dialog(void *)
 	web_search->setToolTip(text("Hindsight.WebSearchNote"));
 	claude_form->addRow(web_search);
 
+	// Claude can only fetch pages it found by searching, so this follows
+	// web search.
+	auto *web_fetch = new QCheckBox(text("Hindsight.WebFetch"), &dialog);
+	web_fetch->setChecked(was_options.web_fetch);
+	web_fetch->setToolTip(text("Hindsight.WebFetchNote"));
+	web_fetch->setEnabled(was_options.web_search);
+	claude_form->addRow(web_fetch);
+	QObject::connect(web_search, &QCheckBox::toggled, web_fetch, &QCheckBox::setEnabled);
+
 	// More: the update check setting and the saved clips.
 	auto *more_box = new QGroupBox(text("Hindsight.MoreTitle"), &dialog);
 	auto *more = new QVBoxLayout(more_box);
@@ -647,6 +656,7 @@ void open_settings_dialog(void *)
 		options.auto_model = auto_model->isChecked();
 		options.model = model->currentData().toString().toStdString();
 		options.web_search = web_search->isChecked();
+		options.web_fetch = web_fetch->isChecked();
 
 #ifdef HINDSIGHT_ACCESS_CODES
 		typed.hindsight_code = code.edit->text().toStdString();
@@ -675,7 +685,7 @@ void open_settings_dialog(void *)
 		const bool setting_saved = checking == was_checking || plugin_settings_set_check_for_updates(checking);
 		const bool options_saved =
 			(options.auto_model == was_options.auto_model && options.model == was_options.model &&
-			 options.web_search == was_options.web_search) ||
+			 options.web_search == was_options.web_search && options.web_fetch == was_options.web_fetch) ||
 			plugin_settings_set_claude_options(options);
 		const bool discord_saved = (typed_user_id == was_user_id && use_own_bot == was_own_bot) ||
 					   plugin_settings_set_discord(typed_user_id, use_own_bot);

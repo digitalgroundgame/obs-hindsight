@@ -73,6 +73,29 @@ void request_thinks_offers_the_tools_and_carries_the_transcript()
 	CHECK(undated["messages"][0]["content"].get<std::string>().find("Current local time") == std::string::npos);
 	CHECK(request["system"].get<std::string>().find("1,700") != std::string::npos);
 	CHECK(request["system"].get<std::string>().find("Search the web first") != std::string::npos);
+	// Web fetch starts off.
+	CHECK(request["system"].get<std::string>().find("fetch") == std::string::npos);
+}
+
+void web_fetch_comes_with_web_search()
+{
+	ClaudeOptions options;
+	options.web_fetch = true;
+	const json request = json::parse(build_claude_request("who won", "", options));
+	CHECK(request["tools"].size() == 3);
+	CHECK(request["tools"][0]["name"] == "web_search");
+	CHECK(request["tools"][1]["type"] == "web_fetch_20250910");
+	CHECK(request["tools"][1]["name"] == "web_fetch");
+	CHECK(request["tools"][1]["max_uses"] == kClaudeMaxFetches);
+	CHECK(request["tools"][1]["max_content_tokens"] == kClaudeMaxFetchTokens);
+	CHECK(request["tools"][2]["name"] == "send_answer");
+	CHECK(request["system"].get<std::string>().find("fetch that page") != std::string::npos);
+
+	// Claude can only fetch pages it found, so without search there's no fetch.
+	options.web_search = false;
+	const json no_search = json::parse(build_claude_request("who won", "", options));
+	CHECK(no_search["tools"].size() == 1);
+	CHECK(no_search["system"].get<std::string>().find("fetch") == std::string::npos);
 }
 
 void request_follows_the_streamers_choices()
@@ -163,6 +186,13 @@ void plain_text_after_searching_is_the_answer()
 	CHECK(answer.question.empty());
 	CHECK(answer.answer == "The Lakers won 112-108. Sources: AP");
 	CHECK(answer.web_searches == 1);
+
+	// A fetched page counts as a result too: only the text after it is the answer.
+	const ClaudeAnswer fetched = parse_claude_response(
+		200,
+		R"({"stop_reason":"end_turn","content":[{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{"query":"q"}},{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[]},{"type":"text","text":"Let me open that."},{"type":"server_tool_use","id":"srvtoolu_2","name":"web_fetch","input":{"url":"https://example.com"}},{"type":"web_fetch_tool_result","tool_use_id":"srvtoolu_2","content":{"type":"web_fetch_result","url":"https://example.com","content":{"type":"document","source":{"type":"text","media_type":"text/plain","data":"page"}}}},{"type":"text","text":"It opens Friday."}],"usage":{"input_tokens":10,"output_tokens":20,"server_tool_use":{"web_search_requests":1,"web_fetch_requests":1}}})");
+	CHECK(fetched.outcome == ClaudeAnswer::Outcome::answered);
+	CHECK(fetched.answer == "It opens Friday.");
 }
 
 void pause_turn_resumes_with_the_content()
@@ -243,6 +273,10 @@ void reads_api_errors()
 		400,
 		R"({"type":"error","error":{"type":"invalid_request_error","message":"Web search is not enabled for this organization."}})");
 	CHECK(no_search.error_type == kWebSearchDisabledError);
+	const ClaudeAnswer no_fetch = parse_claude_response(
+		400,
+		R"({"type":"error","error":{"type":"invalid_request_error","message":"Web fetch is not enabled for this organization."}})");
+	CHECK(no_fetch.error_type == kWebSearchDisabledError);
 
 	const ClaudeAnswer other_400 = parse_claude_response(
 		400, R"({"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too large"}})");
@@ -306,6 +340,7 @@ int main()
 	try {
 		request_thinks_offers_the_tools_and_carries_the_transcript();
 		request_follows_the_streamers_choices();
+		web_fetch_comes_with_web_search();
 		request_survives_bad_utf8();
 		reads_the_question_and_answer();
 		skips_thinking_blocks();
