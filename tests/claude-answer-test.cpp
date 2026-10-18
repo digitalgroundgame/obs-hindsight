@@ -49,7 +49,7 @@ void request_thinks_offers_the_tools_and_carries_the_transcript()
 	const json request = json::parse(build_claude_request("what year did \"the wall\" fall\n",
 							      "Friday, October 16, 2026, 2:48 AM (UTC-04:00)"));
 
-	CHECK(request["model"] == kClaudeModel);
+	CHECK(request["model"] == kDefaultClaudeModel.id);
 	CHECK(request["max_tokens"] == kClaudeMaxTokens);
 	CHECK(request["thinking"]["type"] == "adaptive");
 	CHECK(request["output_config"]["effort"] == kClaudeEffort);
@@ -72,6 +72,28 @@ void request_thinks_offers_the_tools_and_carries_the_transcript()
 	const json undated = json::parse(build_claude_request("hi", ""));
 	CHECK(undated["messages"][0]["content"].get<std::string>().find("Current local time") == std::string::npos);
 	CHECK(request["system"].get<std::string>().find("1,700") != std::string::npos);
+	CHECK(request["system"].get<std::string>().find("Search the web first") != std::string::npos);
+}
+
+void request_follows_the_streamers_choices()
+{
+	ClaudeOptions options;
+	options.model = "claude-opus-5-5";
+	options.web_search = false;
+	const json request = json::parse(build_claude_request("who won", "", options));
+	CHECK(request["model"] == "claude-opus-5-5");
+	// Without web search, only the answer tool is offered, and the prompt
+	// says Claude can't search.
+	CHECK(request["tools"].size() == 1);
+	CHECK(request["tools"][0]["name"] == "send_answer");
+	const std::string system = request["system"];
+	CHECK(system.find("Search the web first") == std::string::npos);
+	CHECK(system.find("can't search the web") != std::string::npos);
+	CHECK(system.find("send_answer") != std::string::npos);
+
+	// A model Hindsight no longer offers goes out as the default.
+	options.model = "claude-haiku-4-5";
+	CHECK(json::parse(build_claude_request("who won", "", options))["model"] == kDefaultClaudeModel.id);
 }
 
 void request_survives_bad_utf8()
@@ -154,17 +176,17 @@ void pause_turn_resumes_with_the_content()
 
 	// The content goes back unchanged as the assistant's message.
 	const json request = json::parse(build_claude_request(
-		"who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)", paused.paused_content));
+		"who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)", {}, paused.paused_content));
 	CHECK(request["messages"].size() == 2);
 	CHECK(request["messages"][1]["role"] == "assistant");
 	CHECK(request["messages"][1]["content"] == json::parse(paused_reply)["content"]);
 
 	// A resumed turn gets only the searches it has left.
-	CHECK(json::parse(build_claude_request("who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)",
+	CHECK(json::parse(build_claude_request("who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)", {},
 					       paused.paused_content, 2))["tools"][0]["max_uses"] == 2);
 
 	// Content that is not a JSON array is left out rather than sent.
-	CHECK(json::parse(build_claude_request("who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)",
+	CHECK(json::parse(build_claude_request("who won", "Friday, October 16, 2026, 2:48 AM (UTC-04:00)", {},
 					       "oops"))["messages"]
 		      .size() == 1);
 }
@@ -176,12 +198,15 @@ void reads_the_usage_and_cost()
 		R"({"content":[{"type":"tool_use","name":"send_answer","input":{"question":"Q?","answer":"A."}}],"usage":{"input_tokens":812,"output_tokens":95}})");
 	CHECK(answer.input_tokens == 812);
 	CHECK(answer.output_tokens == 95);
-	// 812 at $0.10 and 95 at $0.50 per million tokens.
 	CHECK(answer.web_searches == 0);
-	CHECK(std::fabs(claude_cost_dollars(812, 95, 0) - 0.0001287) < 1e-12);
-	CHECK(claude_cost_dollars(0, 0, 0) == 0.0);
+	// On Haiku, 812 at $0.10 and 95 at $0.50 per million tokens.
+	const ClaudeModel haiku = claude_model("claude-haiku-5-5");
+	CHECK(std::fabs(claude_cost_dollars(haiku, 812, 95, 0) - 0.0001287) < 1e-12);
+	CHECK(claude_cost_dollars(haiku, 0, 0, 0) == 0.0);
 	// Each search is $0.01 on top of the tokens.
-	CHECK(std::fabs(claude_cost_dollars(812, 95, 2) - 0.0201287) < 1e-12);
+	CHECK(std::fabs(claude_cost_dollars(haiku, 812, 95, 2) - 0.0201287) < 1e-12);
+	// On Opus, $4 and $20 per million.
+	CHECK(std::fabs(claude_cost_dollars(claude_model("claude-opus-5-5"), 812, 95, 0) - 0.005148) < 1e-12);
 
 	// No usage in the reply reads as zero rather than failing.
 	const ClaudeAnswer no_usage = parse_claude_response(200, tool_reply("Q?", "A."));
@@ -280,6 +305,7 @@ int main()
 	// The tests build JSON with nlohmann/json, which throws on misuse.
 	try {
 		request_thinks_offers_the_tools_and_carries_the_transcript();
+		request_follows_the_streamers_choices();
 		request_survives_bad_utf8();
 		reads_the_question_and_answer();
 		skips_thinking_blocks();

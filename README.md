@@ -86,9 +86,12 @@ OBS log. It does not message Discord yet.
    **Save**. Create the key on the
    [API keys](https://platform.claude.com/settings/keys) page of the Claude
    Console with a workspace selected; a key without a workspace is rejected.
-   Claude searches the web for questions about current events (up to three
-   searches a question, at $0.01 each on your key), so keep web search turned
-   on under [Capabilities](https://platform.claude.com/settings/capabilities).
+   Under **Claude**, pick the model that answers (Haiku, the default, is the
+   fastest and cheapest) and whether Claude may search the web. With **Search
+   the web for current information** on (the default), Claude looks up
+   current events (up to three searches a question, at $0.01 each on your
+   key), so keep web search turned on under
+   [Capabilities](https://platform.claude.com/settings/capabilities) too.
 3. Open your mic's **Filters**, add **Hindsight**, and close the window.
 4. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
    last question" under it.

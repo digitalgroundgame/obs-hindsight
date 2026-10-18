@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "answer-pipeline.hpp"
 #include "claude-client.hpp"
 #include "connect-client.hpp"
+#include "plugin-settings.hpp"
 #include "secret-store.hpp"
 #include "transcriber.hpp"
 
@@ -113,8 +114,14 @@ void answer(const Clip &clip)
 		return;
 	}
 
+	// Read for each question, so a change in Hindsight settings applies to
+	// the next one.
+	const ClaudeOptions options = plugin_settings_claude_options();
+	const ClaudeModel &model = claude_model(options.model);
+	obs_log(LOG_INFO, "asking %s, web search %s", model.id, options.web_search ? "on" : "off");
+
 	const uint64_t asked = os_gettime_ns();
-	const ClaudeAnswer reply = ask_claude(transcript.text, api_key, stopping);
+	const ClaudeAnswer reply = ask_claude(transcript.text, api_key, options, stopping);
 	switch (reply.outcome) {
 	case ClaudeAnswer::Outcome::answered:
 		obs_log(LOG_INFO, "question: %s",
@@ -122,7 +129,7 @@ void answer(const Clip &clip)
 		obs_log(LOG_INFO,
 			"answer (Claude took %.1f s, %.1f s in all; cost $%.5f for %lld in, %lld out tokens, %lld web searches): %s",
 			seconds_since(asked), seconds_since(start),
-			claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches),
+			claude_cost_dollars(model, reply.input_tokens, reply.output_tokens, reply.web_searches),
 			reply.input_tokens, reply.output_tokens, reply.web_searches, reply.answer.c_str());
 #ifdef HINDSIGHT_ACCESS_CODES
 		send_to_discord(reply, start);
@@ -132,7 +139,7 @@ void answer(const Clip &clip)
 		obs_log(LOG_INFO,
 			"Claude found no clear question in that clip (%.1f s, cost $%.5f), so nothing to send",
 			seconds_since(asked),
-			claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches));
+			claude_cost_dollars(model, reply.input_tokens, reply.output_tokens, reply.web_searches));
 		break;
 	case ClaudeAnswer::Outcome::paused: // ask_claude resumes these or turns them into failures
 	case ClaudeAnswer::Outcome::failed:
@@ -144,7 +151,7 @@ void answer(const Clip &clip)
 				"answering stopped: this Claude API key isn't tied to a workspace. In the Claude Console, create a key with a workspace selected and enter it in Tools > Hindsight settings");
 		else if (reply.error_type == kWebSearchDisabledError)
 			obs_log(LOG_WARNING,
-				"answering stopped: web search is turned off for your Claude organization. An admin can turn it on in the Claude Console under Settings > Capabilities");
+				"answering stopped: web search is turned off for your Claude organization. An admin can turn it on in the Claude Console under Settings > Capabilities, or you can turn off Search the web in Tools > Hindsight settings");
 		else if (reply.error_type != "cancelled")
 			obs_log(LOG_WARNING, "answering stopped: the Claude request failed (%s) %s",
 				reply.error_type.c_str(), reply.error_message.c_str());
@@ -153,7 +160,7 @@ void answer(const Clip &clip)
 		if (reply.input_tokens > 0 || reply.output_tokens > 0 || reply.web_searches > 0)
 			obs_log(LOG_INFO,
 				"that request still cost $%.5f for %lld in, %lld out tokens, %lld web searches",
-				claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches),
+				claude_cost_dollars(model, reply.input_tokens, reply.output_tokens, reply.web_searches),
 				reply.input_tokens, reply.output_tokens, reply.web_searches);
 		break;
 	}

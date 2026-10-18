@@ -30,18 +30,29 @@ namespace {
 constexpr const char *kToolName = "send_answer";
 constexpr const char *kSearchToolType = "web_search_20250305";
 
-const char *const kSystemPrompt =
+// The system prompt is these three parts, with the one that fits whether web
+// search is on in the middle.
+const char *const kPromptStart =
 	"You help a live streamer. You get an automatic transcript of the last few seconds of their microphone. "
 	"It may start mid-sentence and may have transcription mistakes.\n\n"
 	"Find the most recent question the streamer asked, whether to chat, to a guest or out loud to themselves, "
 	"and answer it. The answer goes to the streamer in a Discord message, so:\n"
 	"- Answer directly and briefly, in plain text with no Markdown.\n"
 	"- Keep the answer under 1,700 characters.\n"
-	"- If you are not sure of a fact, say so rather than guess.\n\n"
+	"- If you are not sure of a fact, say so rather than guess.\n\n";
+
+const char *const kPromptSearch =
 	"Search the web first when the answer depends on current or recent information, such as news, ongoing "
 	"events, scores, prices or who holds a post now, and answer from what you find. When you searched, name "
 	"your sources briefly at the end of the answer (for example \"Sources: Reuters, AP\"). Answer stable "
-	"knowledge without searching.\n\n"
+	"knowledge without searching.\n\n";
+
+const char *const kPromptNoSearch =
+	"You can't search the web. When the answer depends on current or recent information, such as news, "
+	"ongoing events, scores, prices or who holds a post now, answer from what you know and say it may be out "
+	"of date.\n\n";
+
+const char *const kPromptEnd =
 	"If there is no clear question, leave both fields empty. Never invent a question.\n\n"
 	"Always reply by calling the send_answer tool, even when there is no question. Never answer in plain text.";
 
@@ -89,10 +100,11 @@ ClaudeAnswer failure(std::string type, std::string message = {})
 
 } // namespace
 
-double claude_cost_dollars(long long input_tokens, long long output_tokens, long long web_searches)
+double claude_cost_dollars(const ClaudeModel &model, long long input_tokens, long long output_tokens,
+			   long long web_searches)
 {
-	return (static_cast<double>(input_tokens) * kClaudeInputDollarsPerMillion +
-		static_cast<double>(output_tokens) * kClaudeOutputDollarsPerMillion) /
+	return (static_cast<double>(input_tokens) * model.input_dollars_per_million +
+		static_cast<double>(output_tokens) * model.output_dollars_per_million) /
 		       1e6 +
 	       static_cast<double>(web_searches) * kClaudeDollarsPerSearch;
 }
@@ -115,7 +127,7 @@ std::string shorten_text(const std::string &text, size_t max_characters)
 	return text;
 }
 
-std::string build_claude_request(const std::string &transcript, const std::string &now,
+std::string build_claude_request(const std::string &transcript, const std::string &now, const ClaudeOptions &options,
 				 const std::string &paused_content, int max_searches)
 {
 	// strict keeps the tool's input to this exact shape now that Claude is no
@@ -150,8 +162,28 @@ std::string build_claude_request(const std::string &transcript, const std::strin
 			messages.push_back({{"role", "assistant"}, {"content", std::move(content)}});
 	}
 
+	json tools = json::array();
+	if (options.web_search) {
+		// Basic web search: Claude calls it directly. The newer versions
+		// filter results by running code first, which adds to the wait.
+		tools.push_back({
+			{"type", kSearchToolType},
+			{"name", "web_search"},
+			{"max_uses", max_searches},
+		});
+	}
+	tools.push_back({
+		{"name", kToolName},
+		{"description", "Send the question you found and your answer to the streamer."},
+		{"input_schema", input_schema},
+		{"strict", true},
+	});
+
+	const std::string system =
+		std::string(kPromptStart) + (options.web_search ? kPromptSearch : kPromptNoSearch) + kPromptEnd;
+
 	const json request = {
-		{"model", kClaudeModel},
+		{"model", claude_model(options.model).id},
 		// Thinking counts toward max_tokens, so leave room for it on top of
 		// the answer.
 		{"max_tokens", kClaudeMaxTokens},
@@ -160,23 +192,8 @@ std::string build_claude_request(const std::string &transcript, const std::strin
 		// auto and the system prompt tells Claude to call the tool.
 		{"thinking", {{"type", "adaptive"}}},
 		{"output_config", {{"effort", kClaudeEffort}}},
-		{"system", kSystemPrompt},
-		// Basic web search: Claude calls it directly. The newer versions filter
-		// results by running code first, which adds to the wait.
-		{"tools",
-		 json::array({
-			 {
-				 {"type", kSearchToolType},
-				 {"name", "web_search"},
-				 {"max_uses", max_searches},
-			 },
-			 {
-				 {"name", kToolName},
-				 {"description", "Send the question you found and your answer to the streamer."},
-				 {"input_schema", input_schema},
-				 {"strict", true},
-			 },
-		 })},
+		{"system", system},
+		{"tools", std::move(tools)},
 		{"tool_choice", {{"type", "auto"}}},
 		{"messages", std::move(messages)},
 	};

@@ -179,7 +179,8 @@ ClaudeAnswer send(CURL *curl, int number, const std::string &request, const std:
 
 } // namespace
 
-ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_key, const std::atomic<bool> &cancel)
+ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_key, const ClaudeOptions &options,
+			const std::atomic<bool> &cancel)
 {
 	CURL *curl = curl_easy_init();
 	if (!curl)
@@ -187,7 +188,7 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 
 	const std::string now = local_time_text();
 	int requests = 1;
-	ClaudeAnswer answer = send(curl, requests, build_claude_request(transcript, now), api_key, cancel);
+	ClaudeAnswer answer = send(curl, requests, build_claude_request(transcript, now, options), api_key, cancel);
 	long long input_tokens = answer.input_tokens;
 	long long output_tokens = answer.output_tokens;
 	long long web_searches = answer.web_searches;
@@ -197,7 +198,7 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 		if (searches_left <= 0)
 			break;
 		answer = send(curl, ++requests,
-			      build_claude_request(transcript, now, answer.paused_content,
+			      build_claude_request(transcript, now, options, answer.paused_content,
 						   static_cast<int>(searches_left)),
 			      api_key, cancel);
 		input_tokens += answer.input_tokens;

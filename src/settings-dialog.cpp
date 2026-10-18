@@ -31,6 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialog>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
@@ -510,6 +511,31 @@ void open_settings_dialog(void *)
 	});
 #endif
 
+	// Claude: which model answers, and whether it may search the web. Saved
+	// with Save or Apply; the next question uses them.
+	auto *claude_box = new QGroupBox(text("Hindsight.ClaudeTitle"), &dialog);
+	auto *claude_form = new QFormLayout(claude_box);
+	layout->addWidget(claude_box);
+
+	ClaudeOptions was_options = plugin_settings_claude_options();
+	auto *model = new QComboBox(&dialog);
+	for (const ClaudeModel &choice : kClaudeModels) {
+		model->addItem(QString::fromUtf8(choice.label), QString::fromUtf8(choice.id));
+		model->setItemData(model->count() - 1,
+				   text("Hindsight.ModelPrice")
+					   .arg(QString::number(choice.input_dollars_per_million, 'f', 2),
+						QString::number(choice.output_dollars_per_million, 'f', 2)),
+				   Qt::ToolTipRole);
+	}
+	model->setCurrentIndex(model->findData(QString::fromUtf8(was_options.model.c_str())));
+	model->setToolTip(text("Hindsight.ClaudeModelNote"));
+	claude_form->addRow(text("Hindsight.ClaudeModel"), model);
+
+	auto *web_search = new QCheckBox(text("Hindsight.WebSearch"), &dialog);
+	web_search->setChecked(was_options.web_search);
+	web_search->setToolTip(text("Hindsight.WebSearchNote"));
+	claude_form->addRow(web_search);
+
 	// More: the update check setting and the saved clips.
 	auto *more_box = new QGroupBox(text("Hindsight.MoreTitle"), &dialog);
 	auto *more = new QVBoxLayout(more_box);
@@ -556,6 +582,9 @@ void open_settings_dialog(void *)
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
 		const bool checking = check_updates->isChecked();
+		ClaudeOptions options;
+		options.model = model->currentData().toString().toStdString();
+		options.web_search = web_search->isChecked();
 
 #ifdef HINDSIGHT_ACCESS_CODES
 		typed.hindsight_code = code.edit->text().toStdString();
@@ -572,13 +601,17 @@ void open_settings_dialog(void *)
 		// Blank boxes keep the saved key. On failure the window stays open
 		// so nothing typed is lost.
 		const bool setting_saved = checking == was_checking || plugin_settings_set_check_for_updates(checking);
+		const bool options_saved =
+			(options.model == was_options.model && options.web_search == was_options.web_search) ||
+			plugin_settings_set_claude_options(options);
 		const bool keys_saved = secret_store_save_typed(typed);
-		if (!setting_saved || !keys_saved) {
+		if (!setting_saved || !options_saved || !keys_saved) {
 			error->setText(text("Hindsight.SaveFailed"));
 			error->show();
 			return false;
 		}
 		was_checking = checking;
+		was_options = options;
 		return true;
 	};
 	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {

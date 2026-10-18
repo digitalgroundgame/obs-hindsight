@@ -18,6 +18,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
+#include "claude-models.hpp"
+
 #include <cstddef>
 #include <string>
 
@@ -25,13 +27,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // reply. Kept free of OBS and curl so the tests can run it on its own;
 // claude-client.cpp does the sending.
 
-// A fast model keeps the streamer's wait short.
-constexpr const char *kClaudeModel = "claude-haiku-5-5";
 constexpr const char *kClaudeMessagesUrl = "https://api.anthropic.com/v1/messages";
 constexpr const char *kClaudeApiVersion = "2023-06-01";
 
 // How hard Claude thinks before answering, with adaptive thinking on.
-// "medium" is Haiku's default; higher means better answers and a longer wait.
+// "medium" is Haiku's and Opus's default; higher means better answers and a
+// longer wait.
 constexpr const char *kClaudeEffort = "medium";
 // The most tokens Claude may write, thinking included. An answer is at most a
 // few hundred; the rest is room to think.
@@ -47,18 +48,26 @@ constexpr int kClaudeMaxSearches = 3;
 // longer, so this keeps answers whole.
 constexpr size_t kMaxAnswerCharacters = 1700;
 
+// What the streamer chose in Hindsight settings.
+struct ClaudeOptions {
+	std::string model = kDefaultClaudeModel.id; // a ClaudeModel id
+	bool web_search = true;
+};
+
 // The JSON body for POST /v1/messages: the transcript of the last few seconds
 // of the streamer's mic, their local date and time (from local_time_text) so
-// Claude knows what "today" and "right now" mean, the web search tool, and a
-// tool Claude is told to call with the question it found and its answer.
-// Claude thinks first (adaptive thinking).
+// Claude knows what "today" and "right now" mean, the web search tool (unless
+// options turn it off), and a tool Claude is told to call with the question
+// it found and its answer. Claude thinks first (adaptive thinking). A model
+// Hindsight doesn't offer is sent as the default one.
 //
 // paused_content resumes a turn the API paused (ClaudeAnswer::paused_content):
 // it goes back as the assistant's message, unchanged, and Claude carries on.
 // max_uses applies per request, so a resumed turn passes the searches it has
 // left as max_searches.
 std::string build_claude_request(const std::string &transcript, const std::string &now,
-				 const std::string &paused_content = {}, int max_searches = kClaudeMaxSearches);
+				 const ClaudeOptions &options = {}, const std::string &paused_content = {},
+				 int max_searches = kClaudeMaxSearches);
 
 // The key is not scoped to a workspace, so the API wants an
 // anthropic-workspace-id header. The streamer needs a workspace key instead.
@@ -103,16 +112,12 @@ struct ClaudeAnswer {
 	long long web_searches = 0;
 };
 
-// What a request to kClaudeModel cost in US dollars, at its list prices for
-// prompts under 100,000 tokens (Hindsight's are far shorter, search results
-// included), plus $10 per 1,000 web searches:
-// https://platform.claude.com/docs/en/about-claude/pricing
+// What a request to model cost in US dollars, at its list prices
+// (claude-models.hpp), plus $10 per 1,000 web searches:
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool#usage-and-pricing
-// Update these along with kClaudeModel.
-constexpr double kClaudeInputDollarsPerMillion = 0.10;
-constexpr double kClaudeOutputDollarsPerMillion = 0.50;
 constexpr double kClaudeDollarsPerSearch = 0.01;
-double claude_cost_dollars(long long input_tokens, long long output_tokens, long long web_searches);
+double claude_cost_dollars(const ClaudeModel &model, long long input_tokens, long long output_tokens,
+			   long long web_searches);
 
 // Cuts text longer than max_characters (Unicode code points) to fit,
 // ending it with "…". Never splits a UTF-8 character.

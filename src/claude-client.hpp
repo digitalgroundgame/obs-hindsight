@@ -23,9 +23,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <atomic>
 #include <string>
 
-// Sends the transcript to Claude with the streamer's own API key and waits for
-// the answer. Blocks for up to a minute, so call it off the audio and UI
+// Sends the transcript to Claude with the streamer's own API key and the
+// model and web search they chose, and waits for the answer. Blocks for up to a minute, so call it off the audio and UI
 // threads. Setting cancel (say, while OBS closes) stops it within a second or
 // so, returning a failed answer with error_type "cancelled". curl must already
 // be started with curl_global_init.
-ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_key, const std::atomic<bool> &cancel);
+ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_key, const ClaudeOptions &options,
+			const std::atomic<bool> &cancel);
