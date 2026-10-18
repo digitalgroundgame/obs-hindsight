@@ -91,6 +91,25 @@ void ignores_versions_it_cannot_read()
 	CHECK(!update_available("", ""));
 }
 
+void tells_prereleases_apart()
+{
+	CHECK(is_prerelease("0.11.0-beta1"));
+	CHECK(is_prerelease("v0.11.0-rc2"));
+	CHECK(!is_prerelease("0.11.0"));
+	CHECK(!is_prerelease("latest"));
+}
+
+void finds_the_newest_tag()
+{
+	// GitHub lists releases newest first by date, which need not be the
+	// newest version: a fix to the stable line can follow a beta.
+	CHECK(newest_tag({"0.10.3", "0.11.0-beta1", "0.10.2"}) == 1u);
+	CHECK(newest_tag({"0.11.0", "0.11.0-rc1", "0.11.0-beta2"}) == 0u);
+	CHECK(newest_tag({"nightly", "0.10.2"}) == 1u);
+	CHECK(!newest_tag({"nightly", ""}));
+	CHECK(!newest_tag({}));
+}
+
 } // namespace
 
 int main()
@@ -101,5 +120,7 @@ int main()
 	orders_versions();
 	orders_prereleases_before_the_release();
 	ignores_versions_it_cannot_read();
+	tells_prereleases_apart();
+	finds_the_newest_tag();
 	return check::finish();
 }

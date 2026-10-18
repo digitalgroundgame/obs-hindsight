@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include "update-check.hpp"
+#include "plugin-settings.hpp"
 #include "update-asset.hpp"
 #include "version-check.hpp"
 
@@ -32,22 +33,33 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
+
+namespace {
 
 // Builds set HINDSIGHT_UPDATE_URL from the repository variable of the same
 // name (see CMakeLists.txt) to send this link through our own site. Without
 // it, the link opens the newest release on GitHub. Update now reads GitHub's
 // API either way, since that is where the installer's SHA-256 comes from.
 #ifdef HINDSIGHT_UPDATE_URL
-const char *const kHindsightReleasesPage = HINDSIGHT_UPDATE_URL;
+constexpr const char *kStableReleasePage = HINDSIGHT_UPDATE_URL;
 #else
-const char *const kHindsightReleasesPage = "https://github.com/digitalgroundgame/obs-hindsight/releases/latest";
+constexpr const char *kStableReleasePage = "https://github.com/digitalgroundgame/obs-hindsight/releases/latest";
 #endif
 
-namespace {
+// A beta's own page, with the tag after it.
+constexpr const char *kReleaseTagPage = "https://github.com/digitalgroundgame/obs-hindsight/releases/tag/";
 
-// Only full releases: GitHub leaves drafts and pre-releases out of "latest".
+// The stable channel: only full releases, since GitHub leaves drafts and
+// pre-releases out of "latest".
 constexpr const char *kLatestReleaseApi =
 	"https://api.github.com/repos/digitalgroundgame/obs-hindsight/releases/latest";
+
+// The beta channel: the newest releases of either kind, newest first by date.
+// Ten reaches past the newest stable release and the newest beta, and keeps
+// the answer well under kMaxResponseBytes.
+constexpr const char *kRecentReleasesApi =
+	"https://api.github.com/repos/digitalgroundgame/obs-hindsight/releases?per_page=10";
 
 // The release JSON is a few KB plus asset details; stop well before anything odd.
 constexpr std::size_t kMaxResponseBytes = 1024 * 1024;
@@ -55,6 +67,8 @@ constexpr std::size_t kMaxResponseBytes = 1024 * 1024;
 std::thread worker;
 std::atomic<bool> stopping{false};
 std::atomic<UpdateCheckState> state{UpdateCheckState::not_checked};
+// Read from the settings when a check starts, on the thread that starts it.
+std::atomic<bool> beta_channel{false};
 
 std::mutex result_lock;
 std::string newer_version;                // guarded by result_lock
@@ -107,7 +121,9 @@ std::optional<UpdateInstaller> find_installer(obs_data_t *json, const std::strin
 	return found;
 }
 
-std::optional<LatestRelease> fetch_latest_release()
+// GET url from GitHub's API. Returns the body of a 200 answer, or nothing
+// (logged) for anything else.
+std::optional<std::string> fetch_json(const char *url)
 {
 	CURL *curl = curl_easy_init();
 	if (!curl)
@@ -116,7 +132,7 @@ std::optional<LatestRelease> fetch_latest_release()
 	std::string body;
 	curl_slist *headers = curl_slist_append(nullptr, "Accept: application/vnd.github+json");
 
-	curl_easy_setopt(curl, CURLOPT_URL, kLatestReleaseApi);
+	curl_easy_setopt(curl, CURLOPT_URL, url);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	// GitHub's API rejects requests without a User-Agent.
 	const std::string user_agent = std::string("obs-hindsight/") + PLUGIN_VERSION;
@@ -146,8 +162,15 @@ std::optional<LatestRelease> fetch_latest_release()
 		obs_log(LOG_INFO, "update check skipped: GitHub answered HTTP %ld", status);
 		return std::nullopt;
 	}
+	return body;
+}
 
-	obs_data_t *json = obs_data_create_from_json(body.c_str());
+std::optional<LatestRelease> fetch_latest_stable()
+{
+	const std::optional<std::string> body = fetch_json(kLatestReleaseApi);
+	if (!body)
+		return std::nullopt;
+	obs_data_t *json = obs_data_create_from_json(body->c_str());
 	if (!json) {
 		obs_log(LOG_INFO, "update check skipped: GitHub's answer was not JSON");
 		return std::nullopt;
@@ -159,26 +182,81 @@ std::optional<LatestRelease> fetch_latest_release()
 	return release;
 }
 
+// The newest version among the recent releases, betas included.
+std::optional<LatestRelease> fetch_latest_beta()
+{
+	const std::optional<std::string> body = fetch_json(kRecentReleasesApi);
+	if (!body)
+		return std::nullopt;
+	// GitHub answers with a JSON array, and obs_data reads only objects, so
+	// the array goes in one.
+	obs_data_t *json = obs_data_create_from_json(("{\"releases\":" + *body + "}").c_str());
+	if (!json) {
+		obs_log(LOG_INFO, "update check skipped: GitHub's answer was not JSON");
+		return std::nullopt;
+	}
+	obs_data_array_t *releases = obs_data_get_array(json, "releases");
+	const size_t count = releases ? obs_data_array_count(releases) : 0;
+	std::vector<obs_data_t *> items;
+	std::vector<std::string> tags;
+	for (size_t i = 0; i < count; i++) {
+		obs_data_t *item = obs_data_array_item(releases, i);
+		// Only people who can edit the repository see drafts, but skip
+		// them anyway.
+		if (obs_data_get_bool(item, "draft")) {
+			obs_data_release(item);
+			continue;
+		}
+		items.push_back(item);
+		tags.emplace_back(obs_data_get_string(item, "tag_name"));
+	}
+
+	std::optional<LatestRelease> release;
+	if (const std::optional<size_t> newest = newest_tag(tags)) {
+		release = LatestRelease{tags[*newest], find_installer(items[*newest], tags[*newest])};
+	} else {
+		obs_log(LOG_INFO, "update check skipped: GitHub listed no Hindsight versions");
+	}
+
+	for (obs_data_t *item : items)
+		obs_data_release(item);
+	obs_data_array_release(releases);
+	obs_data_release(json);
+	return release;
+}
+
+std::string release_page_for(const std::string &tag)
+{
+	// The tag parsed as a version, so it is safe in a link.
+	return is_prerelease(tag) ? kReleaseTagPage + tag : kStableReleasePage;
+}
+
 void run_check()
 {
-	std::optional<LatestRelease> release = fetch_latest_release();
+	const bool beta = beta_channel.load();
+	std::optional<LatestRelease> release = beta ? fetch_latest_beta() : fetch_latest_stable();
 	if (!release) {
 		state = UpdateCheckState::failed;
 		return;
 	}
 
 	if (!update_available(release->tag, PLUGIN_VERSION)) {
-		obs_log(LOG_INFO, "up to date (latest release is %s)", release->tag.c_str());
+		obs_log(LOG_INFO, "up to date (latest %s is %s)", beta ? "version, betas included," : "release",
+			release->tag.c_str());
+		// A check on the other channel may have found one before.
+		std::lock_guard<std::mutex> guard(result_lock);
+		newer_version.clear();
+		installer.reset();
 		state = UpdateCheckState::up_to_date;
 		return;
 	}
 
-	obs_log(LOG_INFO, "Hindsight %s is available (running %s): %s", release->tag.c_str(), PLUGIN_VERSION,
-		kHindsightReleasesPage);
 	std::lock_guard<std::mutex> guard(result_lock);
 	newer_version = std::move(release->tag);
 	installer = std::move(release->installer);
 	state = UpdateCheckState::newer;
+	obs_log(LOG_INFO, "Hindsight %s is available (running %s): %s", newer_version.c_str(), PLUGIN_VERSION,
+		release_page_for(newer_version).c_str());
 }
 
 } // namespace
@@ -199,6 +277,7 @@ void update_check_start()
 		state = UpdateCheckState::failed;
 		return;
 	}
+	beta_channel = plugin_settings_beta_updates();
 	stopping = false;
 	state = UpdateCheckState::checking;
 	worker = std::thread(run_check);
@@ -226,4 +305,10 @@ std::optional<UpdateInstaller> update_check_installer()
 {
 	std::lock_guard<std::mutex> guard(result_lock);
 	return installer;
+}
+
+std::string update_check_release_page()
+{
+	std::lock_guard<std::mutex> guard(result_lock);
+	return newer_version.empty() ? kStableReleasePage : release_page_for(newer_version);
 }

@@ -580,8 +580,9 @@ void add_update_line(QGridLayout *grid, QDialog *dialog)
 		update_notice_update_now(nullptr);
 		refresh();
 	});
-	QObject::connect(release_page, &QPushButton::clicked, dialog,
-			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kHindsightReleasesPage))); });
+	QObject::connect(release_page, &QPushButton::clicked, dialog, []() {
+		QDesktopServices::openUrl(QUrl(QString::fromStdString(update_check_release_page())));
+	});
 	QObject::connect(check_now, &QPushButton::clicked, dialog, [refresh]() {
 		update_check_start();
 		refresh();
@@ -852,6 +853,14 @@ void open_settings_dialog(void *)
 	check_updates->setToolTip(text("Hindsight.CheckForUpdatesNote"));
 	more->addWidget(with_info(check_updates, check_updates->toolTip(), &dialog));
 
+	// The release channel. With the check on, saving a change checks again
+	// at once, so the notice above matches it.
+	bool was_beta = plugin_settings_beta_updates();
+	auto *beta_updates = new QCheckBox(text("Hindsight.BetaUpdates"), &dialog);
+	beta_updates->setChecked(was_beta);
+	beta_updates->setToolTip(text("Hindsight.BetaUpdatesNote"));
+	more->addWidget(with_info(beta_updates, beta_updates->toolTip(), &dialog));
+
 	// Deleting clips happens at once, not on Save: it has nothing to undo.
 	auto *clips_line = new QHBoxLayout();
 	auto *clips_note = new QLabel(text("Hindsight.ClipsNote"), &dialog);
@@ -887,6 +896,7 @@ void open_settings_dialog(void *)
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
 		const bool checking = check_updates->isChecked();
+		const bool beta = beta_updates->isChecked();
 		ClaudeOptions options;
 		options.auto_model = auto_model->isChecked();
 		options.model = model->currentData().toString().toStdString();
@@ -918,6 +928,7 @@ void open_settings_dialog(void *)
 		// Blank boxes keep the saved key. On failure the window stays open
 		// so nothing typed is lost.
 		const bool setting_saved = checking == was_checking || plugin_settings_set_check_for_updates(checking);
+		const bool channel_saved = beta == was_beta || plugin_settings_set_beta_updates(beta);
 		const bool options_saved =
 			(options.auto_model == was_options.auto_model && options.model == was_options.model &&
 			 options.web_search == was_options.web_search && options.web_fetch == was_options.web_fetch) ||
@@ -936,12 +947,15 @@ void open_settings_dialog(void *)
 			if (clean_key(row->edit->text().toStdString()).empty() &&
 			    !saved_key(was_keys, row->key).empty())
 				keys_saved = secret_store_forget(row->key) && keys_saved;
-		if (!setting_saved || !options_saved || !discord_saved || !keys_saved) {
+		if (!setting_saved || !channel_saved || !options_saved || !discord_saved || !keys_saved) {
 			error->setText(text("Hindsight.SaveFailed"));
 			error->show();
 			return false;
 		}
 		was_checking = checking;
+		if (beta != was_beta && checking)
+			update_check_start();
+		was_beta = beta;
 		was_options = options;
 		was_user_id = typed_user_id;
 		was_own_bot = use_own_bot;

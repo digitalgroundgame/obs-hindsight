@@ -34,6 +34,14 @@ bool plugin_settings_check_for_updates();
 // Saves the choice. Returns false if the file could not be written.
 bool plugin_settings_set_check_for_updates(bool on);
 
+// Whether update checks include beta versions (GitHub pre-releases) as well
+// as stable releases. Off unless the streamer turned it on; a missing or
+// unreadable file counts as off.
+bool plugin_settings_beta_updates();
+
+// Saves the choice. Returns false if the file could not be written.
+bool plugin_settings_set_beta_updates(bool on);
+
 // The Claude model and web search choice. The model picked automatically,
 // with web search on, unless the streamer changed them; a missing or unreadable file counts as
 // the defaults.

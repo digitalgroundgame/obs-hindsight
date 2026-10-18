@@ -30,6 +30,10 @@ namespace {
 
 constexpr const char *kSettingsFile = "settings.json";
 constexpr const char *kCheckForUpdates = "check_for_updates";
+// "stable" or "beta", so another channel can join later.
+constexpr const char *kUpdateChannel = "update_channel";
+constexpr const char *kStableChannel = "stable";
+constexpr const char *kBetaChannel = "beta";
 constexpr const char *kAutoModel = "auto_model";
 constexpr const char *kClaudeModelKey = "claude_model";
 constexpr const char *kWebSearch = "web_search";
@@ -56,6 +60,7 @@ obs_data_t *read_settings(const std::string &path)
 	if (!data)
 		data = obs_data_create();
 	obs_data_set_default_bool(data, kCheckForUpdates, true);
+	obs_data_set_default_string(data, kUpdateChannel, kStableChannel);
 	obs_data_set_default_bool(data, kAutoModel, true);
 	obs_data_set_default_string(data, kClaudeModelKey, kDefaultClaudeModel.id);
 	obs_data_set_default_bool(data, kWebSearch, true);
@@ -101,6 +106,23 @@ bool plugin_settings_set_check_for_updates(bool on)
 {
 	std::lock_guard<std::mutex> guard(settings_lock);
 	return save_settings([on](obs_data_t *data) { obs_data_set_bool(data, kCheckForUpdates, on); });
+}
+
+bool plugin_settings_beta_updates()
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	obs_data_t *data = read_settings(settings_path());
+	const bool beta = std::string(obs_data_get_string(data, kUpdateChannel)) == kBetaChannel;
+	obs_data_release(data);
+	return beta;
+}
+
+bool plugin_settings_set_beta_updates(bool on)
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	return save_settings([on](obs_data_t *data) {
+		obs_data_set_string(data, kUpdateChannel, on ? kBetaChannel : kStableChannel);
+	});
 }
 
 ClaudeOptions plugin_settings_claude_options()
