@@ -22,6 +22,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "audio-ring.hpp"
 #include "clip-cleanup.hpp"
 #include "clip-file.hpp"
+#include "plugin-settings.hpp"
 #include "secret-store.hpp"
 #include "speech-model.hpp"
 #include "update-check.hpp"
@@ -68,9 +69,8 @@ struct HindsightFilter {
 	// The window setting, for log messages.
 	std::atomic<int> window_seconds{kDefaultWindowSeconds};
 
-	// The API keys are not here: every filter shares the ones in
-	// secret-store.cpp.
-	std::string discord_user_id;
+	// The API keys and Discord user ID are not here: every filter shares
+	// the ones in Tools > Hindsight settings.
 
 	// Writes clips one at a time, off the hotkey thread. destroy() finishes
 	// the queued clips before the filter goes away.
@@ -216,6 +216,22 @@ void take_keys_from_settings(obs_data_t *settings)
 	obs_data_erase(settings, kDiscordBotTokenName);
 }
 
+// The Discord user ID is entered under Tools > Hindsight settings. Versions up
+// to 0.10 kept it in the filter settings instead; move one found there into
+// Hindsight settings (unless one is already saved there), then remove it from
+// the filter settings.
+void take_user_id_from_settings(obs_data_t *settings)
+{
+	const std::string old = obs_data_get_string(settings, "discord_user_id");
+	if (old.empty())
+		return;
+	// Leave it in the settings rather than lose it.
+	if (plugin_settings_discord_user_id().empty() &&
+	    !plugin_settings_set_discord(old, plugin_settings_use_own_bot()))
+		return;
+	obs_data_erase(settings, "discord_user_id");
+}
+
 bool on_save_clip_clicked(obs_properties_t *, obs_property_t *, void *data)
 {
 	capture(static_cast<HindsightFilter *>(data));
@@ -237,6 +253,7 @@ void update(void *data, obs_data_t *settings)
 	filter->window_seconds = seconds;
 
 	take_keys_from_settings(settings);
+	take_user_id_from_settings(settings);
 
 	// A resized ring is a few megabytes. Build it before taking the lock the
 	// audio thread waits on, then copy the newest audio into it under the
@@ -251,11 +268,7 @@ void update(void *data, obs_data_t *settings)
 	if (resize)
 		resized.reset(size);
 
-	std::string discord_user_id = obs_data_get_string(settings, "discord_user_id");
-
 	std::lock_guard<std::mutex> guard(filter->lock);
-	filter->discord_user_id = std::move(discord_user_id);
-
 	if (resize && filter->ring.capacity() != size) {
 		resized.take_newest_from(filter->ring);
 		std::swap(filter->ring, resized);
@@ -415,18 +428,14 @@ obs_properties_t *get_properties(void *data)
 	add_ready_line(props);
 
 #ifdef HINDSIGHT_ACCESS_CODES
-	obs_property_t *note =
-		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.DeliveryNote"), OBS_TEXT_INFO);
+	const bool own_bot = plugin_settings_use_own_bot();
 #else
-	obs_property_t *note =
-		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
+	const bool own_bot = true;
 #endif
+	obs_property_t *note = obs_properties_add_text(
+		props, "spike_note", obs_module_text(own_bot ? "Hindsight.OwnBotNote" : "Hindsight.DeliveryNote"),
+		OBS_TEXT_INFO);
 	obs_property_text_set_info_type(note, OBS_TEXT_INFO_NORMAL);
-
-#ifndef HINDSIGHT_ACCESS_CODES
-	// With access codes, DGG Connect knows who to message.
-	obs_properties_add_text(props, "discord_user_id", obs_module_text("Hindsight.DiscordUserId"), OBS_TEXT_DEFAULT);
-#endif
 	obs_properties_add_int_slider(props, "window_seconds", obs_module_text("Hindsight.WindowSeconds"),
 				      kMinWindowSeconds, kMaxWindowSeconds, 1);
 	obs_properties_add_button2(props, "save_clip", obs_module_text("Hindsight.SaveClip"), on_save_clip_clicked,

@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "settings-dialog.hpp"
 #include "clip-cleanup.hpp"
 #include "connect-client.hpp"
+#include "discord-api.hpp"
 #include "hindsight-filter.hpp"
 #include "plugin-settings.hpp"
 #include "secret-store.hpp"
@@ -30,16 +31,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialog>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QEvent>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
@@ -48,7 +54,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
+#include <vector>
 
 namespace {
 
@@ -57,6 +66,9 @@ constexpr const char *kGetClaudeKeyUrl = "https://platform.claude.com/settings/k
 
 // Digital Ground Game's website, linked from the window's footer.
 constexpr const char *kDggUrl = "https://digitalgroundgame.org";
+
+// Hindsight's own page, the footer's Help link.
+constexpr const char *kHelpUrl = "https://connect.digitalgroundgame.org/hindsight";
 
 #ifdef HINDSIGHT_ACCESS_CODES
 // Where a streamer signs in with Discord to get their Hindsight code.
@@ -118,6 +130,48 @@ void set_class(QLabel *label, const char *name)
 	label->style()->polish(label);
 }
 
+// A status line's mark or message, on one line. Text too long for the space
+// ends in "…", and the whole message is in its tooltip. A message sits on the
+// baseline of the theme's font. A mark (bold) is centred on the middle of
+// the message's capital letters, by the shape of its own glyph, so ✓, ✕ and !
+// line up with the text beside them whatever font they come from.
+class OneLineLabel : public QLabel {
+public:
+	// A bold label is bolded when drawn, not with setFont, which would fix
+	// its font before the theme's font size applies.
+	explicit OneLineLabel(QWidget *parent, bool bold = false) : QLabel(parent), bold_(bold) {}
+
+	// Narrow enough that a long message never widens the window.
+	QSize minimumSizeHint() const override { return {0, QLabel::minimumSizeHint().height()}; }
+	QSize sizeHint() const override { return {0, QLabel::sizeHint().height()}; }
+
+protected:
+	void paintEvent(QPaintEvent *) override
+	{
+		QPainter painter(this);
+		QFont drawn = font();
+		drawn.setBold(bold_);
+		painter.setFont(drawn);
+		const QRect area = contentsRect();
+		const QFontMetrics metrics(drawn);
+		const QString shown = metrics.elidedText(text(), Qt::ElideRight, area.width());
+		const int width = metrics.horizontalAdvance(shown);
+		const int x = alignment() & Qt::AlignHCenter ? area.left() + (area.width() - width) / 2 : area.left();
+		const QFontMetrics text_metrics = fontMetrics();
+		int baseline = area.top() + (area.height() - text_metrics.height()) / 2 + text_metrics.ascent();
+		if (bold_) {
+			const QRect glyph = metrics.tightBoundingRect(shown);
+			const int middle = baseline - static_cast<int>(text_metrics.capHeight() / 2);
+			baseline = middle - (glyph.top() + glyph.bottom()) / 2;
+		}
+		painter.setPen(palette().color(isEnabled() ? QPalette::Active : QPalette::Disabled, foregroundRole()));
+		painter.drawText(QPoint(x, baseline), shown);
+	}
+
+private:
+	bool bold_;
+};
+
 // One line of the Status box: a coloured mark, what it means, and room for a
 // button or two on the right.
 struct StatusLine {
@@ -130,14 +184,14 @@ StatusLine add_status_line(QGridLayout *grid, QWidget *parent)
 {
 	StatusLine line;
 	const int row = grid->rowCount();
-	line.mark = new QLabel(parent);
+	line.mark = new OneLineLabel(parent, true);
+	line.mark->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+	line.mark->ensurePolished();
 	QFont bold = line.mark->font();
 	bold.setBold(true);
-	line.mark->setFont(bold);
-	line.mark->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
-	line.mark->setMinimumWidth(line.mark->fontMetrics().horizontalAdvance(QStringLiteral("✕")) + 4);
-	line.label = new QLabel(parent);
-	line.label->setWordWrap(true);
+	line.mark->setMinimumWidth(QFontMetrics(bold).horizontalAdvance(QStringLiteral("✕")) + 4);
+	line.label = new OneLineLabel(parent);
+	line.label->setObjectName(QStringLiteral("status-line"));
 	line.buttons = new QHBoxLayout();
 	grid->addWidget(line.mark, row, 0);
 	grid->addWidget(line.label, row, 1);
@@ -150,45 +204,192 @@ void show_status(const StatusLine &line, Mark mark, const QString &message)
 	line.mark->setText(QString::fromUtf8(mark_glyph(mark)));
 	set_class(line.mark, mark_class(mark));
 	line.label->setText(message);
+	line.label->setToolTip(message);
 }
 
-// One key's row: a password box that starts empty (saved keys are never
-// shown) and a button to forget the saved key. Its line in the Status box says
-// whether one is saved.
+// Shows or hides a whole status line, its buttons included.
+void set_status_visible(const StatusLine &line, bool visible)
+{
+	line.mark->setVisible(visible);
+	line.label->setVisible(visible);
+	for (int i = 0; i < line.buttons->count(); i++)
+		if (QWidget *button = line.buttons->itemAt(i)->widget())
+			button->setVisible(visible);
+}
+
+// A small circled "i" that says a setting has a tooltip. The tooltip goes on
+// the whole row (with_info), so hovering anywhere on it shows the tooltip.
+QLabel *info_icon(QWidget *parent)
+{
+	const qreal ratio = qApp->devicePixelRatio();
+	QPixmap pixmap(QSize(14, 14) * ratio);
+	pixmap.setDevicePixelRatio(ratio);
+	pixmap.fill(Qt::transparent);
+	QPainter painter(&pixmap);
+	painter.setRenderHint(QPainter::Antialiasing);
+	QColor colour = QApplication::palette().color(QPalette::Text);
+	colour.setAlphaF(0.6f);
+	painter.setPen(QPen(colour, 1.2));
+	painter.drawEllipse(QRectF(1, 1, 12, 12));
+	painter.setPen(Qt::NoPen);
+	painter.setBrush(colour);
+	painter.drawEllipse(QPointF(7, 4.4), 0.9, 0.9);
+	painter.drawRoundedRect(QRectF(6.25, 6, 1.5, 4.6), 0.6, 0.6);
+	painter.end();
+	auto *icon = new QLabel(parent);
+	icon->setPixmap(pixmap);
+	return icon;
+}
+
+// widget followed by an info icon, in one widget carrying the tooltip.
+QWidget *with_info(QWidget *widget, const QString &tooltip, QWidget *parent)
+{
+	auto *row = new QWidget(parent);
+	auto *line = new QHBoxLayout(row);
+	line->setContentsMargins(0, 0, 0, 0);
+	line->setSpacing(6);
+	line->addWidget(widget);
+	line->addWidget(info_icon(row));
+	line->addStretch(1);
+	row->setToolTip(tooltip);
+	return row;
+}
+
+// A form label with an info icon; its field gets the same tooltip.
+QWidget *info_label(const char *label, const QString &tooltip, QWidget *field, QWidget *parent)
+{
+	field->setToolTip(tooltip);
+	return with_info(new QLabel(text(label), parent), tooltip, parent);
+}
+
+// One key's row: a password box holding the saved key, shown as dots until
+// the eye inside the box is clicked, and, if given, a button to get a key,
+// shown while the box is empty. Emptying the box and saving removes the key.
+// Its line in the Status box says whether one is saved.
 struct KeyRow {
 	QLineEdit *edit = nullptr;
-	QPushButton *forget = nullptr;
-	// Takes Forget's place while no key is saved, if given.
 	QPushButton *get_key = nullptr;
+	QHBoxLayout *line = nullptr; // the row's field, for hiding the row
 	StatusLine status;
+	SecretKey key = SecretKey::ClaudeApiKey;
 	const char *saved_text = nullptr;
 	const char *missing_text = nullptr;
 };
 
-void show_saved_state(const KeyRow &row, bool saved)
+// An eye, crossed out once the key is showing, drawn in the theme's text
+// colour, muted unless the pointer is on it (Qt has no eye among its standard
+// icons).
+QIcon eye_icon(bool crossed, bool hovered)
 {
-	row.edit->setPlaceholderText(text(saved ? "Hindsight.KeySaved" : "Hindsight.KeyNotSet"));
-	// Forget while a key is saved, the button to get one while it isn't.
-	row.forget->setVisible(saved);
-	if (row.get_key)
-		row.get_key->setVisible(!saved);
-	show_status(row.status, saved ? Mark::good : Mark::attention, text(saved ? row.saved_text : row.missing_text));
+	const qreal ratio = qApp->devicePixelRatio();
+	QPixmap pixmap(QSize(16, 16) * ratio);
+	pixmap.setDevicePixelRatio(ratio);
+	pixmap.fill(Qt::transparent);
+	QPainter painter(&pixmap);
+	painter.setRenderHint(QPainter::Antialiasing);
+	QColor colour = QApplication::palette().color(QPalette::Text);
+	if (!hovered)
+		colour.setAlphaF(0.5f);
+	painter.setPen(QPen(colour, 1.4));
+	QPainterPath outline;
+	outline.moveTo(1.5, 8);
+	outline.quadTo(8, 1.5, 14.5, 8);
+	outline.quadTo(8, 14.5, 1.5, 8);
+	painter.drawPath(outline);
+	painter.setBrush(colour);
+	painter.drawEllipse(QPointF(8, 8), 2.2, 2.2);
+	if (crossed)
+		painter.drawLine(QPointF(2.5, 13.5), QPointF(13.5, 2.5));
+	return QIcon(pixmap);
 }
 
-// extra, if given, goes beside the Forget button.
-KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent, QWidget *extra = nullptr)
+// Redraws the eye when the pointer moves onto or off its button. QLineEdit
+// draws an action's icon the same way hovered or not.
+class EyeHover : public QObject {
+public:
+	EyeHover(QAction *eye, QLineEdit *edit) : QObject(eye), eye_(eye), edit_(edit) {}
+
+	void redraw(bool hovered) { eye_->setIcon(eye_icon(edit_->echoMode() == QLineEdit::Normal, hovered)); }
+
+protected:
+	bool eventFilter(QObject *, QEvent *event) override
+	{
+		if (event->type() == QEvent::Enter)
+			redraw(true);
+		else if (event->type() == QEvent::Leave)
+			redraw(false);
+		return false;
+	}
+
+private:
+	QAction *eye_;
+	QLineEdit *edit_;
+};
+
+std::string saved_key(const Secrets &saved, SecretKey key)
+{
+	switch (key) {
+	case SecretKey::ClaudeApiKey:
+		return saved.claude_api_key;
+	case SecretKey::DiscordBotToken:
+		return saved.discord_bot_token;
+	case SecretKey::HindsightCode:
+		return saved.hindsight_code;
+	}
+	return {};
+}
+
+// Puts the saved key in the box and says on its status line whether there is
+// one.
+void show_saved_state(const KeyRow &row, const Secrets &saved)
+{
+	const std::string key = saved_key(saved, row.key);
+	row.edit->setText(QString::fromStdString(key));
+	// setRowVisible shows every widget in a row, so this follows it too.
+	if (row.get_key)
+		row.get_key->setVisible(key.empty());
+	show_status(row.status, key.empty() ? Mark::attention : Mark::good,
+		    text(key.empty() ? row.missing_text : row.saved_text));
+}
+
+KeyRow add_key_row(QFormLayout *form, const char *label, const char *note, SecretKey key, QWidget *parent,
+		   QPushButton *get_key = nullptr)
 {
 	KeyRow row;
+	row.key = key;
+	row.get_key = get_key;
 	row.edit = new QLineEdit(parent);
 	row.edit->setEchoMode(QLineEdit::Password);
-	row.forget = new QPushButton(text("Hindsight.Forget"), parent);
+	row.edit->setPlaceholderText(text("Hindsight.KeyNotSet"));
 
-	auto *line = new QHBoxLayout();
-	line->addWidget(row.edit, 1);
-	line->addWidget(row.forget);
-	if (extra)
-		line->addWidget(extra);
-	form->addRow(text(label), line);
+	QAction *eye = row.edit->addAction(eye_icon(false, false), QLineEdit::TrailingPosition);
+	eye->setToolTip(text("Hindsight.ShowKey"));
+	// Only a box with a key in it has anything to show.
+	eye->setVisible(false);
+	QLineEdit *edit = row.edit;
+	auto *hover = new EyeHover(eye, edit);
+	for (QObject *button : eye->associatedObjects())
+		if (button != edit)
+			button->installEventFilter(hover);
+	QObject::connect(eye, &QAction::triggered, edit, [edit, eye, hover]() {
+		const bool show = edit->echoMode() == QLineEdit::Password;
+		edit->setEchoMode(show ? QLineEdit::Normal : QLineEdit::Password);
+		hover->redraw(true);
+		eye->setToolTip(text(show ? "Hindsight.HideKey" : "Hindsight.ShowKey"));
+	});
+	QObject::connect(edit, &QLineEdit::textChanged, eye,
+			 [eye](const QString &typed) { eye->setVisible(!typed.isEmpty()); });
+
+	row.line = new QHBoxLayout();
+	row.line->addWidget(row.edit, 1);
+	if (get_key) {
+		row.line->addWidget(get_key);
+		// The button to get a key while the box is empty; without a
+		// button, the box takes the whole row.
+		QObject::connect(edit, &QLineEdit::textChanged, get_key,
+				 [get_key](const QString &typed) { get_key->setVisible(typed.isEmpty()); });
+	}
+	form->addRow(info_label(label, text(note), row.edit, parent), row.line);
 	return row;
 }
 
@@ -350,8 +551,6 @@ Mark update_mark(const UpdateNotice &notice)
 void add_update_line(QGridLayout *grid, QDialog *dialog)
 {
 	const StatusLine line = add_status_line(grid, dialog);
-	// One line only; the Update now tooltip has the details.
-	line.label->setWordWrap(false);
 	auto *progress = new QProgressBar(dialog);
 	progress->setRange(0, 100);
 	grid->addWidget(progress, grid->rowCount(), 1, 1, 2);
@@ -393,6 +592,50 @@ void add_update_line(QGridLayout *grid, QDialog *dialog)
 	timer->start(500);
 }
 
+double luminance(const QColor &color)
+{
+	auto channel = [](double c) {
+		return c <= 0.03928 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+	};
+	return 0.2126 * channel(color.redF()) + 0.7152 * channel(color.greenF()) + 0.0722 * channel(color.blueF());
+}
+
+double contrast(const QColor &a, const QColor &b)
+{
+	const double la = luminance(a);
+	const double lb = luminance(b);
+	return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
+
+// The theme's link colour, moved toward its text colour until it reads
+// clearly on both the window and the boxes (4.5:1, the WCAG level for body
+// text). Yami's blue is about 3:1 on its boxes' grey, so it comes out lighter
+// there; a theme whose links already read clearly keeps them as they are.
+// OBS themes set the application's palette (Window for the window, Base for
+// the boxes); a label's own palette doesn't have the real colours. The colour
+// goes on the label's links. Call this again after changing the label's text.
+void make_links_readable(QLabel *label)
+{
+	const QPalette palette = QApplication::palette();
+	const QColor window = palette.color(QPalette::Window);
+	const QColor box = palette.color(QPalette::Base);
+	const QColor text_colour = palette.color(QPalette::WindowText);
+	const QColor link = palette.color(QPalette::Link);
+	auto reads_clearly = [&](const QColor &colour) {
+		return std::min(contrast(colour, window), contrast(colour, box)) >= 4.5;
+	};
+	QColor readable = link;
+	for (int step = 1; step <= 10 && !reads_clearly(readable); step++) {
+		const double t = step / 10.0;
+		readable.setRgbF(static_cast<float>(link.redF() + (text_colour.redF() - link.redF()) * t),
+				 static_cast<float>(link.greenF() + (text_colour.greenF() - link.greenF()) * t),
+				 static_cast<float>(link.blueF() + (text_colour.blueF() - link.blueF()) * t));
+	}
+	QString html = label->text();
+	html.replace(QStringLiteral("<a href="), QStringLiteral("<a style='color: %1' href=").arg(readable.name()));
+	label->setText(html);
+}
+
 // A short grey line under a box's controls; the details are in its tooltip.
 QLabel *add_note(QLayout *layout, const char *note, const char *details, QWidget *parent)
 {
@@ -405,7 +648,8 @@ QLabel *add_note(QLayout *layout, const char *note, const char *details, QWidget
 	return label;
 }
 
-// The DGG logo and a link to the website, above the Save button.
+// The Digital Ground Game logo, a link to the website and a Help link, above
+// the Save button.
 void add_footer(QVBoxLayout *layout, QWidget *parent)
 {
 	auto *footer = new QHBoxLayout();
@@ -425,7 +669,14 @@ void add_footer(QVBoxLayout *layout, QWidget *parent)
 	}
 	auto *link = new QLabel(text("Hindsight.MadeBy").arg(QString::fromUtf8(kDggUrl)), parent);
 	link->setOpenExternalLinks(true);
+	make_links_readable(link);
 	footer->addWidget(link, 1);
+	auto *help = new QLabel(QStringLiteral("<a href='%1'>%2</a>")
+					.arg(QString::fromUtf8(kHelpUrl), text("Hindsight.Help").toHtmlEscaped()),
+				parent);
+	help->setOpenExternalLinks(true);
+	make_links_readable(help);
+	footer->addWidget(help);
 	layout->addLayout(footer);
 }
 
@@ -437,6 +688,15 @@ void open_settings_dialog(void *)
 	dialog.setMinimumWidth(520);
 
 	auto *layout = new QVBoxLayout(&dialog);
+	// Rows shown while the window is open would otherwise be squeezed into
+	// its old height, so it grows to fit them.
+	auto fit_window = [dialog = &dialog]() {
+		QTimer::singleShot(0, dialog, [dialog]() {
+			const int needed = dialog->sizeHint().height();
+			if (dialog->height() < needed)
+				dialog->resize(dialog->width(), needed);
+		});
+	};
 
 	// Status: one line per thing Hindsight needs, each with its mark, so a
 	// streamer can tell at a glance whether it is ready.
@@ -449,11 +709,13 @@ void open_settings_dialog(void *)
 	auto *keys_box = new QGroupBox(text("Hindsight.KeysTitle"), &dialog);
 	auto *keys = new QVBoxLayout(keys_box);
 	auto *form = new QFormLayout();
+	// The same gap between every row, with or without a button in it.
+	form->setSpacing(8);
 	keys->addLayout(form);
 	auto *get_claude_key = new QPushButton(text("Hindsight.GetClaudeKey"), &dialog);
 	get_claude_key->setToolTip(text("Hindsight.GetClaudeKeyNote"));
-	KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", &dialog, get_claude_key);
-	claude.get_key = get_claude_key;
+	KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", "Hindsight.ClaudeApiKeyNote",
+				    SecretKey::ClaudeApiKey, &dialog, get_claude_key);
 	claude.status = add_status_line(status, &dialog);
 	claude.saved_text = "Hindsight.ClaudeKeySaved";
 	claude.missing_text = "Hindsight.ClaudeKeyMissing";
@@ -461,55 +723,122 @@ void open_settings_dialog(void *)
 			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetClaudeKeyUrl))); });
 #ifdef HINDSIGHT_ACCESS_CODES
 	auto *get_code = new QPushButton(text("Hindsight.GetCode"), &dialog);
-	KeyRow code = add_key_row(form, "Hindsight.HindsightCode", &dialog, get_code);
-	code.get_key = get_code;
+	KeyRow code = add_key_row(form, "Hindsight.HindsightCode", "Hindsight.HindsightCodeNote",
+				  SecretKey::HindsightCode, &dialog, get_code);
 	code.status = add_status_line(status, &dialog);
 	code.saved_text = "Hindsight.CodeSaved";
 	code.missing_text = "Hindsight.CodeMissing";
 	QObject::connect(get_code, &QPushButton::clicked, &dialog,
 			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetCodeUrl))); });
 	add_test_button(code, &dialog);
-#else
-	KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", &dialog);
+#endif
+	// The streamer's own Discord bot: the only way to get answers in builds
+	// without access codes, and the alternative to a code in builds with them.
+	KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", "Hindsight.DiscordBotTokenNote",
+				     SecretKey::DiscordBotToken, &dialog);
 	discord.status = add_status_line(status, &dialog);
 	discord.saved_text = "Hindsight.DiscordTokenSaved";
 	discord.missing_text = "Hindsight.DiscordTokenMissing";
-#endif
+	// Not a secret, so it's shown and edited in place.
+	auto *user_id = new QLineEdit(QString::fromStdString(plugin_settings_discord_user_id()), &dialog);
+	user_id->setPlaceholderText(text("Hindsight.DiscordUserIdPlaceholder"));
+	form->addRow(info_label("Hindsight.DiscordUserId", text("Hindsight.DiscordUserIdNote"), user_id, &dialog),
+		     user_id);
+#ifdef _WIN32
+	// secret-seal.cpp encrypts the keys for the Windows account.
+	add_note(keys, "Hindsight.SettingsNoteWindows", "Hindsight.SettingsNoteWindowsDetails", &dialog);
+#else
 	add_note(keys, "Hindsight.SettingsNote", "Hindsight.SettingsNoteDetails", &dialog);
+#endif
+
+#ifdef HINDSIGHT_ACCESS_CODES
+	// The code is the default. A small link swaps the code's row for the
+	// bot's, and back; Save or Apply keeps the choice.
+	auto own_bot = std::make_shared<bool>(plugin_settings_use_own_bot());
+	auto *switch_link = new QLabel(&dialog);
+	set_class(switch_link, "text-muted");
+	keys->addWidget(switch_link);
+	auto show_delivery = [form, code, discord, user_id, switch_link, own_bot]() {
+		const bool bot = *own_bot;
+		// QFormLayout shows every widget in a row, so the shown row's Get
+		// button is then set again.
+		form->setRowVisible(code.line, !bot);
+		form->setRowVisible(discord.line, bot);
+		form->setRowVisible(user_id, bot);
+		if (!bot)
+			code.get_key->setVisible(code.edit->text().isEmpty());
+		set_status_visible(code.status, !bot);
+		set_status_visible(discord.status, bot);
+		switch_link->setText(
+			QStringLiteral("<a href='#'>%1</a>")
+				.arg(text(bot ? "Hindsight.UseCode" : "Hindsight.UseOwnBot").toHtmlEscaped()));
+		make_links_readable(switch_link);
+	};
+	QObject::connect(switch_link, &QLabel::linkActivated, &dialog, [own_bot, show_delivery, fit_window]() {
+		*own_bot = !*own_bot;
+		show_delivery();
+		fit_window();
+	});
+#endif
 	layout->addWidget(keys_box);
 
 	add_model_row(status, &dialog);
 	add_update_line(status, &dialog);
 
 	const Secrets saved = secret_store_get();
-	show_saved_state(claude, !saved.claude_api_key.empty());
+	show_saved_state(claude, saved);
 #ifdef HINDSIGHT_ACCESS_CODES
-	show_saved_state(code, !saved.hindsight_code.empty());
-#else
-	show_saved_state(discord, !saved.discord_bot_token.empty());
+	show_saved_state(code, saved);
+#endif
+	show_saved_state(discord, saved);
+#ifdef HINDSIGHT_ACCESS_CODES
+	show_delivery();
 #endif
 
-	QObject::connect(claude.forget, &QPushButton::clicked, &dialog, [claude]() {
-		if (secret_store_forget(SecretKey::ClaudeApiKey)) {
-			claude.edit->clear();
-			show_saved_state(claude, false);
-		}
+	// Claude: which model answers, and whether it may search the web. Saved
+	// with Save or Apply; the next question uses them.
+	auto *claude_box = new QGroupBox(text("Hindsight.ClaudeTitle"), &dialog);
+	auto *claude_form = new QFormLayout(claude_box);
+	layout->addWidget(claude_box);
+
+	ClaudeOptions was_options = plugin_settings_claude_options();
+	auto *auto_model = new QCheckBox(text("Hindsight.AutoModel"), &dialog);
+	auto_model->setChecked(was_options.auto_model);
+	auto_model->setToolTip(text("Hindsight.AutoModelNote"));
+	claude_form->addRow(with_info(auto_model, auto_model->toolTip(), &dialog));
+
+	auto *model = new QComboBox(&dialog);
+	for (const ClaudeModel &choice : kClaudeModels) {
+		model->addItem(QString::fromUtf8(choice.label), QString::fromUtf8(choice.id));
+		model->setItemData(model->count() - 1,
+				   text("Hindsight.ModelPrice")
+					   .arg(QString::number(choice.input_dollars_per_million, 'f', 2),
+						QString::number(choice.output_dollars_per_million, 'f', 2)),
+				   Qt::ToolTipRole);
+	}
+	model->setCurrentIndex(model->findData(QString::fromUtf8(was_options.model.c_str())));
+	model->setToolTip(text("Hindsight.ClaudeModelNote"));
+	claude_form->addRow(info_label("Hindsight.ClaudeModel", model->toolTip(), model, &dialog), model);
+	// The dropdown is only for picking the model by hand.
+	claude_form->setRowVisible(model, !was_options.auto_model);
+	QObject::connect(auto_model, &QCheckBox::toggled, &dialog, [claude_form, model, fit_window](bool on) {
+		claude_form->setRowVisible(model, !on);
+		fit_window();
 	});
-#ifdef HINDSIGHT_ACCESS_CODES
-	QObject::connect(code.forget, &QPushButton::clicked, &dialog, [code]() {
-		if (secret_store_forget(SecretKey::HindsightCode)) {
-			code.edit->clear();
-			show_saved_state(code, false);
-		}
-	});
-#else
-	QObject::connect(discord.forget, &QPushButton::clicked, &dialog, [discord]() {
-		if (secret_store_forget(SecretKey::DiscordBotToken)) {
-			discord.edit->clear();
-			show_saved_state(discord, false);
-		}
-	});
-#endif
+
+	auto *web_search = new QCheckBox(text("Hindsight.WebSearch"), &dialog);
+	web_search->setChecked(was_options.web_search);
+	web_search->setToolTip(text("Hindsight.WebSearchNote"));
+	claude_form->addRow(with_info(web_search, web_search->toolTip(), &dialog));
+
+	// Claude can only fetch pages it found by searching, so this follows
+	// web search.
+	auto *web_fetch = new QCheckBox(text("Hindsight.WebFetch"), &dialog);
+	web_fetch->setChecked(was_options.web_fetch);
+	web_fetch->setToolTip(text("Hindsight.WebFetchNote"));
+	web_fetch->setEnabled(was_options.web_search);
+	claude_form->addRow(with_info(web_fetch, web_fetch->toolTip(), &dialog));
+	QObject::connect(web_search, &QCheckBox::toggled, web_fetch, &QCheckBox::setEnabled);
 
 	// More: the update check setting and the saved clips.
 	auto *more_box = new QGroupBox(text("Hindsight.MoreTitle"), &dialog);
@@ -522,7 +851,7 @@ void open_settings_dialog(void *)
 	auto *check_updates = new QCheckBox(text("Hindsight.CheckForUpdates"), &dialog);
 	check_updates->setChecked(was_checking);
 	check_updates->setToolTip(text("Hindsight.CheckForUpdatesNote"));
-	more->addWidget(check_updates);
+	more->addWidget(with_info(check_updates, check_updates->toolTip(), &dialog));
 
 	// The release channel. With the check on, saving a change checks again
 	// at once, so the notice above matches it.
@@ -530,7 +859,7 @@ void open_settings_dialog(void *)
 	auto *beta_updates = new QCheckBox(text("Hindsight.BetaUpdates"), &dialog);
 	beta_updates->setChecked(was_beta);
 	beta_updates->setToolTip(text("Hindsight.BetaUpdatesNote"));
-	more->addWidget(beta_updates);
+	more->addWidget(with_info(beta_updates, beta_updates->toolTip(), &dialog));
 
 	// Deleting clips happens at once, not on Save: it has nothing to undo.
 	auto *clips_line = new QHBoxLayout();
@@ -561,11 +890,18 @@ void open_settings_dialog(void *)
 	QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 	// Saves what was typed and returns whether it worked. Every widget lives
 	// until exec() returns, so capturing by reference is safe.
+	std::string was_user_id = plugin_settings_discord_user_id();
+	bool was_own_bot = plugin_settings_use_own_bot();
 	auto save = [&]() -> bool {
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
 		const bool checking = check_updates->isChecked();
 		const bool beta = beta_updates->isChecked();
+		ClaudeOptions options;
+		options.auto_model = auto_model->isChecked();
+		options.model = model->currentData().toString().toStdString();
+		options.web_search = web_search->isChecked();
+		options.web_fetch = web_fetch->isChecked();
 
 #ifdef HINDSIGHT_ACCESS_CODES
 		typed.hindsight_code = code.edit->text().toStdString();
@@ -575,16 +911,43 @@ void open_settings_dialog(void *)
 			error->show();
 			return false;
 		}
-#else
+#endif
 		typed.discord_bot_token = discord.edit->text().toStdString();
+		const std::string typed_user_id = clean_key(user_id->text().toStdString());
+		if (!typed_user_id.empty() && !is_discord_user_id(typed_user_id)) {
+			error->setText(text("Hindsight.BadUserId"));
+			error->show();
+			return false;
+		}
+#ifdef HINDSIGHT_ACCESS_CODES
+		const bool use_own_bot = *own_bot;
+#else
+		const bool use_own_bot = false; // ignored: these builds always use the bot
 #endif
 
 		// Blank boxes keep the saved key. On failure the window stays open
 		// so nothing typed is lost.
 		const bool setting_saved = checking == was_checking || plugin_settings_set_check_for_updates(checking);
 		const bool channel_saved = beta == was_beta || plugin_settings_set_beta_updates(beta);
-		const bool keys_saved = secret_store_save_typed(typed);
-		if (!setting_saved || !channel_saved || !keys_saved) {
+		const bool options_saved =
+			(options.auto_model == was_options.auto_model && options.model == was_options.model &&
+			 options.web_search == was_options.web_search && options.web_fetch == was_options.web_fetch) ||
+			plugin_settings_set_claude_options(options);
+		const bool discord_saved = (typed_user_id == was_user_id && use_own_bot == was_own_bot) ||
+					   plugin_settings_set_discord(typed_user_id, use_own_bot);
+		// An emptied box removes its key; secret_store_save_typed keeps a
+		// saved key when its box is blank.
+		const Secrets was_keys = secret_store_get();
+		bool keys_saved = secret_store_save_typed(typed);
+		std::vector<const KeyRow *> rows = {&claude, &discord};
+#ifdef HINDSIGHT_ACCESS_CODES
+		rows.push_back(&code);
+#endif
+		for (const KeyRow *row : rows)
+			if (clean_key(row->edit->text().toStdString()).empty() &&
+			    !saved_key(was_keys, row->key).empty())
+				keys_saved = secret_store_forget(row->key) && keys_saved;
+		if (!setting_saved || !channel_saved || !options_saved || !discord_saved || !keys_saved) {
 			error->setText(text("Hindsight.SaveFailed"));
 			error->show();
 			return false;
@@ -593,6 +956,10 @@ void open_settings_dialog(void *)
 		if (beta != was_beta && checking)
 			update_check_start();
 		was_beta = beta;
+		was_options = options;
+		was_user_id = typed_user_id;
+		was_own_bot = use_own_bot;
+		user_id->setText(QString::fromStdString(typed_user_id));
 		return true;
 	};
 	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {
@@ -605,16 +972,41 @@ void open_settings_dialog(void *)
 			return;
 		error->hide();
 		const Secrets now = secret_store_get();
-		claude.edit->clear();
-		show_saved_state(claude, !now.claude_api_key.empty());
+		show_saved_state(claude, now);
 #ifdef HINDSIGHT_ACCESS_CODES
-		code.edit->clear();
-		show_saved_state(code, !now.hindsight_code.empty());
-#else
-		discord.edit->clear();
-		show_saved_state(discord, !now.discord_bot_token.empty());
+		show_saved_state(code, now);
+#endif
+		show_saved_state(discord, now);
+#ifdef HINDSIGHT_ACCESS_CODES
+		show_delivery();
 #endif
 	});
+
+	// Every button beside a box or a status line has the same width, so they
+	// line up in one column, and the boxes beside them the same height.
+	QList<QPushButton *> side_buttons;
+	for (QPushButton *button : dialog.findChildren<QPushButton *>())
+		if (!qobject_cast<QDialogButtonBox *>(button->parentWidget()))
+			side_buttons.append(button);
+	const QList<QLineEdit *> boxes = dialog.findChildren<QLineEdit *>();
+	int width = 0;
+	int height = 0;
+	for (QPushButton *button : side_buttons) {
+		button->ensurePolished();
+		width = std::max(width, button->sizeHint().width());
+		height = std::max(height, button->sizeHint().height());
+	}
+	for (QLineEdit *box : boxes) {
+		box->ensurePolished();
+		height = std::max(height, box->sizeHint().height());
+	}
+	for (QPushButton *button : side_buttons)
+		button->setFixedSize(width, height);
+	for (QLineEdit *box : boxes)
+		box->setFixedHeight(height);
+	// Status lines with and without a button are the same height too.
+	for (QWidget *line : dialog.findChildren<QWidget *>(QStringLiteral("status-line")))
+		line->setMinimumHeight(height);
 
 	dialog.exec();
 }

@@ -19,6 +19,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "answer-pipeline.hpp"
 #include "claude-client.hpp"
 #include "connect-client.hpp"
+#include "discord-client.hpp"
+#include "plugin-settings.hpp"
 #include "secret-store.hpp"
 #include "transcriber.hpp"
 
@@ -70,9 +72,29 @@ const char *transcript_problem(Transcript::Outcome outcome)
 	}
 }
 
+// DMs the answer to the streamer from their own Discord bot.
+void send_with_own_bot(const ClaudeAnswer &reply, uint64_t start)
+{
+	const std::string token = secret_store_get().discord_bot_token;
+	const std::string user_id = plugin_settings_discord_user_id();
+	if (token.empty() || user_id.empty()) {
+		obs_log(LOG_WARNING,
+			"not sent to Discord: add your Discord bot token and user ID under Tools > Hindsight settings");
+		return;
+	}
+	const uint64_t sending = os_gettime_ns();
+	const DiscordReply sent =
+		discord_send_dm(token, user_id, connect_message_content(reply.question, reply.answer), stopping);
+	if (sent.ok)
+		obs_log(LOG_INFO, "sent to your Discord DMs from your bot (%.1f s, %.1f s in all)",
+			seconds_since(sending), seconds_since(start));
+	else if (sent.error != "cancelled")
+		obs_log(LOG_WARNING, "not sent to Discord (%s): %s", sent.error.c_str(), sent.message.c_str());
+}
+
 #ifdef HINDSIGHT_ACCESS_CODES
-// DMs the answer to the streamer through DGG Connect.
-void send_to_discord(const ClaudeAnswer &reply, uint64_t start)
+// DMs the answer to the streamer through Digital Ground Game Connect.
+void send_with_code(const ClaudeAnswer &reply, uint64_t start)
 {
 	const std::string code = secret_store_get().hindsight_code;
 	if (code.empty()) {
@@ -113,26 +135,43 @@ void answer(const Clip &clip)
 		return;
 	}
 
+	// Read for each question, so a change in Hindsight settings applies to
+	// the next one.
+	const ClaudeOptions options = plugin_settings_claude_options();
+	if (options.auto_model)
+		obs_log(LOG_INFO, "asking Claude, model picked automatically, web search %s",
+			options.web_search ? "on" : "off");
+	else
+		obs_log(LOG_INFO, "asking %s, web search %s", claude_model(options.model).id,
+			options.web_search ? "on" : "off");
+
 	const uint64_t asked = os_gettime_ns();
-	const ClaudeAnswer reply = ask_claude(transcript.text, api_key, stopping);
+	const ClaudeAnswer reply = ask_claude(transcript.text, api_key, options, stopping);
+	// Everything this question was billed for: picking the model, then the
+	// answer from the model picked.
+	const ClaudeModel &model = claude_model(reply.model);
+	const double cost = reply.routing_dollars +
+			    claude_cost_dollars(model, reply.input_tokens, reply.output_tokens, reply.web_searches);
 	switch (reply.outcome) {
 	case ClaudeAnswer::Outcome::answered:
 		obs_log(LOG_INFO, "question: %s",
 			reply.question.empty() ? "(Claude answered without restating it)" : reply.question.c_str());
 		obs_log(LOG_INFO,
-			"answer (Claude took %.1f s, %.1f s in all; cost $%.5f for %lld in, %lld out tokens, %lld web searches): %s",
-			seconds_since(asked), seconds_since(start),
-			claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches),
-			reply.input_tokens, reply.output_tokens, reply.web_searches, reply.answer.c_str());
+			"answer from %s (Claude took %.1f s, %.1f s in all; cost $%.5f for %lld in, %lld out tokens, %lld web searches): %s",
+			model.id, seconds_since(asked), seconds_since(start), cost, reply.input_tokens,
+			reply.output_tokens, reply.web_searches, reply.answer.c_str());
 #ifdef HINDSIGHT_ACCESS_CODES
-		send_to_discord(reply, start);
+		if (!plugin_settings_use_own_bot()) {
+			send_with_code(reply, start);
+			break;
+		}
 #endif
+		send_with_own_bot(reply, start);
 		break;
 	case ClaudeAnswer::Outcome::no_question:
 		obs_log(LOG_INFO,
 			"Claude found no clear question in that clip (%.1f s, cost $%.5f), so nothing to send",
-			seconds_since(asked),
-			claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches));
+			seconds_since(asked), cost);
 		break;
 	case ClaudeAnswer::Outcome::paused: // ask_claude resumes these or turns them into failures
 	case ClaudeAnswer::Outcome::failed:
@@ -144,16 +183,16 @@ void answer(const Clip &clip)
 				"answering stopped: this Claude API key isn't tied to a workspace. In the Claude Console, create a key with a workspace selected and enter it in Tools > Hindsight settings");
 		else if (reply.error_type == kWebSearchDisabledError)
 			obs_log(LOG_WARNING,
-				"answering stopped: web search is turned off for your Claude organization. An admin can turn it on in the Claude Console under Settings > Capabilities");
+				"answering stopped: web search or fetch is turned off for your Claude organization. An admin can turn it on in the Claude Console under Settings > Capabilities, or you can turn off Search the web or Fetch web pages in Tools > Hindsight settings");
 		else if (reply.error_type != "cancelled")
 			obs_log(LOG_WARNING, "answering stopped: the Claude request failed (%s) %s",
 				reply.error_type.c_str(), reply.error_message.c_str());
 		// A request that failed after Claude started (say, cut off after
 		// searching) was still billed.
-		if (reply.input_tokens > 0 || reply.output_tokens > 0 || reply.web_searches > 0)
+		if (reply.input_tokens > 0 || reply.output_tokens > 0 || reply.web_searches > 0 ||
+		    reply.routing_dollars > 0)
 			obs_log(LOG_INFO,
-				"that request still cost $%.5f for %lld in, %lld out tokens, %lld web searches",
-				claude_cost_dollars(reply.input_tokens, reply.output_tokens, reply.web_searches),
+				"that request still cost $%.5f for %lld in, %lld out tokens, %lld web searches", cost,
 				reply.input_tokens, reply.output_tokens, reply.web_searches);
 		break;
 	}
