@@ -10,8 +10,9 @@ env:
   # CMakeLists.txt. Set it under Settings > Secrets and variables > Actions >
   # Variables; leave it unset to link to the latest GitHub release.
   HINDSIGHT_UPDATE_URL: ${{ vars.HINDSIGHT_UPDATE_URL }}
-  # Set to true under the same Variables page to ask streamers for a DGG
-  # Connect code instead of a Discord bot token, read by CMakeLists.txt.
+  # Set to true under the same Variables page to ask streamers for a Digital
+  # Ground Game Connect code instead of a Discord bot token, read by
+  # CMakeLists.txt.
   HINDSIGHT_ACCESS_CODES: ${{ vars.HINDSIGHT_ACCESS_CODES }}
 jobs:
   check-event:

@@ -33,16 +33,17 @@ std::string string_at(const json &object, const char *key)
 	return found != object.end() && found->is_string() ? found->get<std::string>() : std::string();
 }
 
-// What to tell the streamer when DGG Connect gives no message of its own.
+// What to tell the streamer when Digital Ground Game Connect gives no message
+// of its own.
 std::string fallback_message(long status)
 {
 	if (status == 401)
-		return "DGG Connect didn't accept your Hindsight code. Get a new one and paste it in Tools > Hindsight settings.";
+		return "Digital Ground Game Connect didn't accept your Hindsight code. Get a new one and paste it in Tools > Hindsight settings.";
 	if (status == 429)
 		return "Too many messages for now. Wait a minute and try again.";
 	if (status >= 500)
-		return "DGG Connect couldn't send the message right now. Try again in a minute.";
-	return "DGG Connect couldn't send the message (HTTP " + std::to_string(status) + ").";
+		return "Digital Ground Game Connect couldn't send the message right now. Try again in a minute.";
+	return "Digital Ground Game Connect couldn't send the message (HTTP " + std::to_string(status) + ").";
 }
 
 } // namespace
@@ -124,7 +125,7 @@ ConnectReply parse_connect_response(long status, const std::string &body)
 	if (reply.error.empty()) {
 		if (status == 404) {
 			reply.error = "not_found";
-			reply.message = "DGG Connect isn't set up to send Hindsight answers yet.";
+			reply.message = "Digital Ground Game Connect isn't set up to send Hindsight answers yet.";
 			return reply;
 		}
 		reply.error = "bad_response";

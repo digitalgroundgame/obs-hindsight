@@ -90,9 +90,11 @@ set(
   claude-answer-test
   claude-app-test
   claude-models-test
+  claude-route-test
   clip-cleanup-test
   clip-file-test
   connect-api-test
+  discord-api-test
   file-hash-test
   local-time-test
   private-file-test

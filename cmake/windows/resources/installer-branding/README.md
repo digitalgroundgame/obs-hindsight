@@ -16,6 +16,6 @@ example `wizard-image-2x.bmp` (328 × 628) and `wizard-small-image-2x.bmp`
 (110 × 110). The installer picks them up through the `*` wildcard and Windows
 uses the best fit for the screen.
 
-The icon and corner logo come from the official square DGG logo (1024 × 1024).
+The icon and corner logo come from the official square Digital Ground Game logo (1024 × 1024).
 The tall banners show the full Digital Ground Game wordmark in white,
-centered on the DGG blue (#1144FF).
+centered on the Digital Ground Game blue (#1144FF).

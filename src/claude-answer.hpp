@@ -44,14 +44,21 @@ constexpr int kClaudeMaxTokens = 4096;
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool#max-uses
 constexpr int kClaudeMaxSearches = 3;
 
-// The longest answer Claude is asked for. The DGG server cuts anything
-// longer, so this keeps answers whole.
+// The longest answer Claude is asked for. The Digital Ground Game server cuts
+// anything longer, so this keeps answers whole.
 constexpr size_t kMaxAnswerCharacters = 1700;
 
 // What the streamer chose in Hindsight settings.
 struct ClaudeOptions {
+	// Let Hindsight pick the model for each question (claude-route.hpp);
+	// model is used only when this is off.
+	bool auto_model = true;
 	std::string model = kDefaultClaudeModel.id; // a ClaudeModel id
 	bool web_search = true;
+	// Let Claude open pages it found by searching. Used only with
+	// web_search, since Claude can only fetch addresses already in the
+	// conversation.
+	bool web_fetch = false;
 };
 
 // The JSON body for POST /v1/messages: the transcript of the last few seconds
@@ -78,6 +85,10 @@ inline constexpr const char *kWorkspaceKeyError = "workspace_key";
 // API refuses any request that offers it. They can turn it back on in the
 // Claude Console.
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool#how-to-use-web-search
+// At most this many pages per question, each cut to this many tokens, so
+// fetching can't run up the cost or the wait.
+inline constexpr int kClaudeMaxFetches = 2;
+inline constexpr int kClaudeMaxFetchTokens = 8000;
 inline constexpr const char *kWebSearchDisabledError = "web_search_disabled";
 
 struct ClaudeAnswer {
@@ -110,6 +121,11 @@ struct ClaudeAnswer {
 	// Web searches the request was billed for. Search results Claude read are
 	// already counted in input_tokens.
 	long long web_searches = 0;
+
+	// Set by ask_claude: the model that answered, and what picking it cost
+	// when the model was picked automatically.
+	std::string model;
+	double routing_dollars = 0;
 };
 
 // What a request to model cost in US dollars, at its list prices

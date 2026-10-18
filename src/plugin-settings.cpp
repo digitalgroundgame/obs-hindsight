@@ -30,8 +30,12 @@ namespace {
 
 constexpr const char *kSettingsFile = "settings.json";
 constexpr const char *kCheckForUpdates = "check_for_updates";
+constexpr const char *kAutoModel = "auto_model";
 constexpr const char *kClaudeModelKey = "claude_model";
 constexpr const char *kWebSearch = "web_search";
+constexpr const char *kWebFetch = "web_fetch";
+constexpr const char *kDiscordUserId = "discord_user_id";
+constexpr const char *kUseOwnBot = "use_own_bot";
 constexpr const char *kSendTo = "send_to";
 
 // So a read never sees a save half done, and two saves don't undo each other.
@@ -53,8 +57,11 @@ obs_data_t *read_settings(const std::string &path)
 	if (!data)
 		data = obs_data_create();
 	obs_data_set_default_bool(data, kCheckForUpdates, true);
+	obs_data_set_default_bool(data, kAutoModel, true);
 	obs_data_set_default_string(data, kClaudeModelKey, kDefaultClaudeModel.id);
 	obs_data_set_default_bool(data, kWebSearch, true);
+	obs_data_set_default_bool(data, kWebFetch, false);
+	obs_data_set_default_bool(data, kUseOwnBot, false);
 	obs_data_set_default_string(data, kSendTo, answer_destination_id(AnswerDestination::discord));
 	return data;
 }
@@ -103,9 +110,11 @@ ClaudeOptions plugin_settings_claude_options()
 	std::lock_guard<std::mutex> guard(settings_lock);
 	obs_data_t *data = read_settings(settings_path());
 	ClaudeOptions options;
+	options.auto_model = obs_data_get_bool(data, kAutoModel);
 	// A model this version doesn't offer reads as the default.
 	options.model = claude_model(obs_data_get_string(data, kClaudeModelKey)).id;
 	options.web_search = obs_data_get_bool(data, kWebSearch);
+	options.web_fetch = obs_data_get_bool(data, kWebFetch);
 	obs_data_release(data);
 	return options;
 }
@@ -114,8 +123,37 @@ bool plugin_settings_set_claude_options(const ClaudeOptions &options)
 {
 	std::lock_guard<std::mutex> guard(settings_lock);
 	return save_settings([&options](obs_data_t *data) {
+		obs_data_set_bool(data, kAutoModel, options.auto_model);
 		obs_data_set_string(data, kClaudeModelKey, claude_model(options.model).id);
 		obs_data_set_bool(data, kWebSearch, options.web_search);
+		obs_data_set_bool(data, kWebFetch, options.web_fetch);
+	});
+}
+
+std::string plugin_settings_discord_user_id()
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	obs_data_t *data = read_settings(settings_path());
+	std::string user_id = obs_data_get_string(data, kDiscordUserId);
+	obs_data_release(data);
+	return user_id;
+}
+
+bool plugin_settings_use_own_bot()
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	obs_data_t *data = read_settings(settings_path());
+	const bool on = obs_data_get_bool(data, kUseOwnBot);
+	obs_data_release(data);
+	return on;
+}
+
+bool plugin_settings_set_discord(const std::string &user_id, bool use_own_bot)
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	return save_settings([&user_id, use_own_bot](obs_data_t *data) {
+		obs_data_set_string(data, kDiscordUserId, user_id.c_str());
+		obs_data_set_bool(data, kUseOwnBot, use_own_bot);
 	});
 }
 
