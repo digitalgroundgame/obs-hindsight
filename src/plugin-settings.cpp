@@ -22,12 +22,17 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <plugin-support.h>
 #include <util/platform.h>
 
+#include <functional>
 #include <string>
 
 namespace {
 
 constexpr const char *kSettingsFile = "settings.json";
 constexpr const char *kCheckForUpdates = "check_for_updates";
+// "stable" or "beta", so another channel can join later.
+constexpr const char *kUpdateChannel = "update_channel";
+constexpr const char *kStableChannel = "stable";
+constexpr const char *kBetaChannel = "beta";
 
 std::string settings_path()
 {
@@ -45,7 +50,30 @@ obs_data_t *read_settings(const std::string &path)
 	if (!data)
 		data = obs_data_create();
 	obs_data_set_default_bool(data, kCheckForUpdates, true);
+	obs_data_set_default_string(data, kUpdateChannel, kStableChannel);
 	return data;
+}
+
+// Reads the file, lets change set what it saves, and writes it back, so
+// settings added later are kept.
+bool save_settings(const std::function<void(obs_data_t *)> &change)
+{
+	const std::string path = settings_path();
+	if (path.empty())
+		return false;
+
+	char *dir = obs_module_config_path("");
+	if (dir)
+		os_mkdirs(dir);
+	bfree(dir);
+
+	obs_data_t *data = read_settings(path);
+	change(data);
+	const bool saved = obs_data_save_json_safe(data, path.c_str(), "tmp", "bak");
+	obs_data_release(data);
+	if (!saved)
+		obs_log(LOG_ERROR, "could not save settings to %s", path.c_str());
+	return saved;
 }
 
 } // namespace
@@ -60,21 +88,20 @@ bool plugin_settings_check_for_updates()
 
 bool plugin_settings_set_check_for_updates(bool on)
 {
-	const std::string path = settings_path();
-	if (path.empty())
-		return false;
+	return save_settings([on](obs_data_t *data) { obs_data_set_bool(data, kCheckForUpdates, on); });
+}
 
-	char *dir = obs_module_config_path("");
-	if (dir)
-		os_mkdirs(dir);
-	bfree(dir);
-
-	// Start from the file so settings added later are kept.
-	obs_data_t *data = read_settings(path);
-	obs_data_set_bool(data, kCheckForUpdates, on);
-	const bool saved = obs_data_save_json_safe(data, path.c_str(), "tmp", "bak");
+bool plugin_settings_beta_updates()
+{
+	obs_data_t *data = read_settings(settings_path());
+	const bool beta = std::string(obs_data_get_string(data, kUpdateChannel)) == kBetaChannel;
 	obs_data_release(data);
-	if (!saved)
-		obs_log(LOG_ERROR, "could not save settings to %s", path.c_str());
-	return saved;
+	return beta;
+}
+
+bool plugin_settings_set_beta_updates(bool on)
+{
+	return save_settings([on](obs_data_t *data) {
+		obs_data_set_string(data, kUpdateChannel, on ? kBetaChannel : kStableChannel);
+	});
 }

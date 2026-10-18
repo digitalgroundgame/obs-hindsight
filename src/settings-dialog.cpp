@@ -381,8 +381,9 @@ void add_update_line(QGridLayout *grid, QDialog *dialog)
 		update_notice_update_now(nullptr);
 		refresh();
 	});
-	QObject::connect(release_page, &QPushButton::clicked, dialog,
-			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kHindsightReleasesPage))); });
+	QObject::connect(release_page, &QPushButton::clicked, dialog, []() {
+		QDesktopServices::openUrl(QUrl(QString::fromStdString(update_check_release_page())));
+	});
 	QObject::connect(check_now, &QPushButton::clicked, dialog, [refresh]() {
 		update_check_start();
 		refresh();
@@ -523,6 +524,14 @@ void open_settings_dialog(void *)
 	check_updates->setToolTip(text("Hindsight.CheckForUpdatesNote"));
 	more->addWidget(check_updates);
 
+	// The release channel. With the check on, saving a change checks again
+	// at once, so the notice above matches it.
+	bool was_beta = plugin_settings_beta_updates();
+	auto *beta_updates = new QCheckBox(text("Hindsight.BetaUpdates"), &dialog);
+	beta_updates->setChecked(was_beta);
+	beta_updates->setToolTip(text("Hindsight.BetaUpdatesNote"));
+	more->addWidget(beta_updates);
+
 	// Deleting clips happens at once, not on Save: it has nothing to undo.
 	auto *clips_line = new QHBoxLayout();
 	auto *clips_note = new QLabel(text("Hindsight.ClipsNote"), &dialog);
@@ -556,6 +565,7 @@ void open_settings_dialog(void *)
 		Secrets typed;
 		typed.claude_api_key = claude.edit->text().toStdString();
 		const bool checking = check_updates->isChecked();
+		const bool beta = beta_updates->isChecked();
 
 #ifdef HINDSIGHT_ACCESS_CODES
 		typed.hindsight_code = code.edit->text().toStdString();
@@ -572,13 +582,17 @@ void open_settings_dialog(void *)
 		// Blank boxes keep the saved key. On failure the window stays open
 		// so nothing typed is lost.
 		const bool setting_saved = checking == was_checking || plugin_settings_set_check_for_updates(checking);
+		const bool channel_saved = beta == was_beta || plugin_settings_set_beta_updates(beta);
 		const bool keys_saved = secret_store_save_typed(typed);
-		if (!setting_saved || !keys_saved) {
+		if (!setting_saved || !channel_saved || !keys_saved) {
 			error->setText(text("Hindsight.SaveFailed"));
 			error->show();
 			return false;
 		}
 		was_checking = checking;
+		if (beta != was_beta && checking)
+			update_check_start();
+		was_beta = beta;
 		return true;
 	};
 	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, [&]() {

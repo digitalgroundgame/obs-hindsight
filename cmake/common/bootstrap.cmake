@@ -58,7 +58,12 @@ set(PLUGIN_EMAIL ${_email})
 set(PLUGIN_VERSION ${_version})
 set(MACOS_BUNDLEID ${_bundleId})
 
-string(REPLACE "." ";" _version_canonical "${_version}")
+# Hindsight: a beta or release candidate (0.11.0-beta1, 0.11.0-rc1) keeps its
+# full name in PLUGIN_VERSION, but project() and Windows' file version take
+# numbers only, so they get _version_numbers (0.11.0).
+string(REGEX REPLACE "-.*$" "" _version_numbers "${_version}")
+
+string(REPLACE "." ";" _version_canonical "${_version_numbers}")
 list(GET _version_canonical 0 PLUGIN_VERSION_MAJOR)
 list(GET _version_canonical 1 PLUGIN_VERSION_MINOR)
 list(GET _version_canonical 2 PLUGIN_VERSION_PATCH)

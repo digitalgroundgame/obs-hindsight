@@ -372,7 +372,7 @@ void add_update_notice(obs_properties_t *props, HindsightFilter *filter)
 								    obs_module_text("Hindsight.DownloadUpdate"),
 								    on_download_update_clicked, nullptr);
 		obs_property_button_set_type(button, OBS_BUTTON_URL);
-		std::string url = kHindsightReleasesPage; // the setter wants a non-const char * and copies it
+		std::string url = update_check_release_page(); // the setter wants a non-const char * and copies it
 		obs_property_button_set_url(button, url.data());
 	}
 }

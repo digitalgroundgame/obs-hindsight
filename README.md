@@ -109,6 +109,13 @@ reached, Hindsight carries on without a notice. When there is no notice,
 **Tools > Hindsight settings** has a **Check for updates** button to ask again
 at any time.
 
+Updates come from the stable channel unless you tick **Include beta versions**
+in **Tools > Hindsight settings**. Betas get new features first and may have
+more bugs. With it ticked, the notice offers the newest version, beta or
+stable, so a beta user moves on to the stable release once it is out. Unticking
+it never moves you back: you stay on your beta until a newer stable release
+ships.
+
 On Windows the notice has an **Update now** button. It downloads the new
 installer, checks its SHA-256 against the one GitHub lists for the release, and
 opens it. From there it is the usual install: click **Yes** on the Windows
@@ -122,6 +129,8 @@ has a **Download the update** button that opens the release page.
 
 One HTTPS GET to
 `https://api.github.com/repos/digitalgroundgame/obs-hindsight/releases/latest`
+(with **Include beta versions** ticked,
+`https://api.github.com/repos/digitalgroundgame/obs-hindsight/releases?per_page=10`)
 with `User-Agent: obs-hindsight/<version>` (GitHub requires one) and an
 `Accept` header asking for JSON. Nothing else: no keys, no audio, no details
 about you or your PC. Like any web request, it shows GitHub your IP address.
@@ -192,6 +201,26 @@ version was already released, the merge builds but publishes nothing, so bump
 the version in the PR that should ship. The release waits for the build,
 formatting, unit tests and clang-tidy, and is skipped if any of them fail. A
 version like `0.2.0-beta1` or `0.2.0-rc1` is published as a pre-release.
+
+### Release channels
+
+There are two channels. **Stable** is GitHub's latest release, which skips
+pre-releases: the download link above, Connect's Hindsight page and every
+install that keeps the default all follow it. **Beta** is every release,
+pre-releases included, and reaches the streamers who tick **Include beta
+versions**.
+
+To try a feature on beta first, release it as a beta, in its own release PR as
+usual: set `version` in `buildspec.json` to the next version with `-beta1`
+(say `0.11.0-beta1` after `0.10.2`) and merge. Fixes go out as `-beta2`, and so
+on, or `-rc1` once it is ready to ship. To move it to stable, release the same
+version without the suffix (`0.11.0`): beta users are offered it too, since it
+comes after its betas.
+
+While a beta is on `main`, a stable fix can't come from `main`, since that
+would ship the beta's features too. Branch `release/0.10` from the `0.10.2`
+tag, fix it there, and push a `0.10.3` tag: that makes a draft release to
+publish by hand. Beta users stay on the newer beta.
 
 Pushing a version tag by hand still works the way the template intended: it
 creates a draft release to review and publish yourself.

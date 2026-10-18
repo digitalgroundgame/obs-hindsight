@@ -22,7 +22,7 @@ BEGIN
             VALUE "LegalCopyright", "(C) ${CURRENT_YEAR} ${PLUGIN_AUTHOR}"
             VALUE "OriginalFilename", "${PROJECT_NAME}"
             VALUE "ProductName", "${PROJECT_NAME}"
-            VALUE "ProductVersion", "${PROJECT_VERSION}"
+            VALUE "ProductVersion", "${PLUGIN_VERSION}"
         END
     END
     BLOCK "VarFileInfo"

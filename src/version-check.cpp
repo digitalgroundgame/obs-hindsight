@@ -91,3 +91,23 @@ bool update_available(std::string_view latest_tag, std::string_view running_vers
 	const std::optional<ReleaseVersion> running = parse_release_version(running_version);
 	return latest && running && is_newer(*latest, *running);
 }
+
+bool is_prerelease(std::string_view tag)
+{
+	const std::optional<ReleaseVersion> version = parse_release_version(tag);
+	return version && version->stage != ReleaseVersion::Stage::release;
+}
+
+std::optional<std::size_t> newest_tag(const std::vector<std::string> &tags)
+{
+	std::optional<std::size_t> newest;
+	std::optional<ReleaseVersion> newest_version;
+	for (std::size_t i = 0; i < tags.size(); i++) {
+		const std::optional<ReleaseVersion> version = parse_release_version(tags[i]);
+		if (version && (!newest_version || is_newer(*version, *newest_version))) {
+			newest = i;
+			newest_version = version;
+		}
+	}
+	return newest;
+}

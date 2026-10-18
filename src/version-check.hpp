@@ -18,8 +18,11 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #pragma once
 
+#include <cstddef>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 // A Hindsight version as buildspec.json and the release tags spell it:
 // 1.2.3, 1.2.3-beta1 or 1.2.3-rc2. A leading "v" is accepted too.
@@ -44,3 +47,12 @@ bool is_newer(const ReleaseVersion &a, const ReleaseVersion &b);
 // Whether latest_tag names a newer release than running_version. False when
 // either one does not parse, so a malformed tag never prompts an update.
 bool update_available(std::string_view latest_tag, std::string_view running_version);
+
+// Whether tag is a beta or release candidate, which GitHub publishes as a
+// pre-release. False when it does not parse.
+bool is_prerelease(std::string_view tag);
+
+// Which of tags names the newest version, for the beta channel, which takes
+// pre-releases and releases alike. Tags that do not parse are skipped;
+// nothing when none parse.
+std::optional<std::size_t> newest_tag(const std::vector<std::string> &tags);

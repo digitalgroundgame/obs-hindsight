@@ -36,6 +36,8 @@ enum class UpdateCheckState {
 
 // Starts a check, unless one is running. Call after curl_global_init, from
 // obs_module_load or from the UI thread for the Check for updates button.
+// It reads the release channel from Hindsight settings: stable releases
+// only, or betas too.
 void update_check_start();
 
 UpdateCheckState update_check_state();
@@ -61,5 +63,7 @@ struct UpdateInstaller {
 // from any thread.
 std::optional<UpdateInstaller> update_check_installer();
 
-// The page to download the newest release from.
-extern const char *const kHindsightReleasesPage;
+// The page to download the newer release from: a beta's own page on GitHub,
+// or for a stable release the link builds set with HINDSIGHT_UPDATE_URL
+// (GitHub's latest release without it). Safe to call from any thread.
+std::string update_check_release_page();
