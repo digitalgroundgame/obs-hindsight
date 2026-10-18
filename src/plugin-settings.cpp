@@ -32,6 +32,7 @@ constexpr const char *kSettingsFile = "settings.json";
 constexpr const char *kCheckForUpdates = "check_for_updates";
 constexpr const char *kClaudeModelKey = "claude_model";
 constexpr const char *kWebSearch = "web_search";
+constexpr const char *kSendTo = "send_to";
 
 // So a read never sees a save half done, and two saves don't undo each other.
 std::mutex settings_lock;
@@ -54,6 +55,7 @@ obs_data_t *read_settings(const std::string &path)
 	obs_data_set_default_bool(data, kCheckForUpdates, true);
 	obs_data_set_default_string(data, kClaudeModelKey, kDefaultClaudeModel.id);
 	obs_data_set_default_bool(data, kWebSearch, true);
+	obs_data_set_default_string(data, kSendTo, answer_destination_id(AnswerDestination::discord));
 	return data;
 }
 
@@ -114,5 +116,22 @@ bool plugin_settings_set_claude_options(const ClaudeOptions &options)
 	return save_settings([&options](obs_data_t *data) {
 		obs_data_set_string(data, kClaudeModelKey, claude_model(options.model).id);
 		obs_data_set_bool(data, kWebSearch, options.web_search);
+	});
+}
+
+AnswerDestination plugin_settings_destination()
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	obs_data_t *data = read_settings(settings_path());
+	const AnswerDestination destination = answer_destination_from_id(obs_data_get_string(data, kSendTo));
+	obs_data_release(data);
+	return destination;
+}
+
+bool plugin_settings_set_destination(AnswerDestination destination)
+{
+	std::lock_guard<std::mutex> guard(settings_lock);
+	return save_settings([destination](obs_data_t *data) {
+		obs_data_set_string(data, kSendTo, answer_destination_id(destination));
 	});
 }

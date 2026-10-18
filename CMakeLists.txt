@@ -56,6 +56,8 @@ target_sources(
     src/plugin-main.cpp
     src/answer-pipeline.cpp
     src/answer-pipeline.hpp
+    src/claude-app-open.cpp
+    src/claude-app-open.hpp
     src/hindsight-filter.cpp
     src/hindsight-filter.hpp
     src/plugin-settings.cpp
@@ -92,11 +94,12 @@ if(NOT APPLE)
   hindsight_add_whisper(${CMAKE_PROJECT_NAME})
 endif()
 
-# DPAPI, which secret-seal.cpp uses to encrypt the saved keys, and BCrypt,
-# which file-hash.cpp uses to check the speech model download and sha256.cpp
-# uses to check a downloaded update.
+# DPAPI, which secret-seal.cpp uses to encrypt the saved keys; BCrypt, which
+# file-hash.cpp uses to check the speech model download and sha256.cpp uses
+# to check a downloaded update; and the shell's light API, which
+# claude-app-open.cpp uses to see whether the Claude app is installed.
 if(WIN32)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32 bcrypt)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE crypt32 bcrypt shlwapi)
 endif()
 
 # Where the update notice's Download the update button goes. CI fills this in

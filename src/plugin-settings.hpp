@@ -19,6 +19,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include "claude-answer.hpp"
+#include "claude-app.hpp"
 
 // Hindsight's preferences that are not secrets, kept in settings.json in the
 // plugin's config folder (separate from the keys file). Safe to call from any
@@ -39,3 +40,10 @@ ClaudeOptions plugin_settings_claude_options();
 
 // Saves the choice. Returns false if the file could not be written.
 bool plugin_settings_set_claude_options(const ClaudeOptions &options);
+
+// Where the hotkey sends what it heard. Discord unless the streamer picked
+// the Claude app; a missing or unreadable file counts as Discord.
+AnswerDestination plugin_settings_destination();
+
+// Saves the choice. Returns false if the file could not be written.
+bool plugin_settings_set_destination(AnswerDestination destination);

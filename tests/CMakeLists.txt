@@ -88,6 +88,7 @@ set(
   audio-freshness-test
   audio-ring-test
   claude-answer-test
+  claude-app-test
   claude-models-test
   clip-cleanup-test
   clip-file-test

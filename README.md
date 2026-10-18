@@ -92,6 +92,11 @@ OBS log. It does not message Discord yet.
    current events (up to three searches a question, at $0.01 each on your
    key), so keep web search turned on under
    [Capabilities](https://platform.claude.com/settings/capabilities) too.
+   To have your Claude plan answer instead, set **Send questions to** to
+   **Claude app**. Hindsight then skips the API key: the hotkey opens a new
+   chat in the [Claude desktop app](https://claude.com/download) with what it
+   heard, and you press send there. The Claude window opens on top of your
+   game, so with Display Capture your viewers see it.
 3. Open your mic's **Filters**, add **Hindsight**, and close the window.
 4. In **Settings > Hotkeys**, find your mic's name and bind "Hindsight: answer the
    last question" under it.

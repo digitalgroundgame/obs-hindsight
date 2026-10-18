@@ -11,6 +11,8 @@ set(
   "${CMAKE_CURRENT_LIST_DIR}/audio-ring.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/claude-answer.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/claude-answer.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/claude-app.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/claude-app.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/claude-models.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/claude-models.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-cleanup.cpp"

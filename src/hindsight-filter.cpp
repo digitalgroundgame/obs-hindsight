@@ -20,8 +20,10 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "answer-pipeline.hpp"
 #include "audio-freshness.hpp"
 #include "audio-ring.hpp"
+#include "claude-app-open.hpp"
 #include "clip-cleanup.hpp"
 #include "clip-file.hpp"
+#include "plugin-settings.hpp"
 #include "secret-store.hpp"
 #include "speech-model.hpp"
 #include "update-check.hpp"
@@ -381,7 +383,7 @@ void add_update_notice(obs_properties_t *props, HindsightFilter *filter)
 // missing. OBS colours warning and error lines with the streamer's theme. It
 // is worked out when the settings open; Tools > Hindsight settings has the
 // live details.
-void add_ready_line(obs_properties_t *props)
+void add_ready_line(obs_properties_t *props, bool claude_app)
 {
 	const SpeechModelStatus model = speech_model_status();
 	// Only the speech model matters here: without voice detection Hindsight
@@ -393,7 +395,11 @@ void add_ready_line(obs_properties_t *props)
 
 	const char *key = "Hindsight.FilterReady";
 	enum obs_text_info_type type = OBS_TEXT_INFO_NORMAL;
-	if (secret_store_get().claude_api_key.empty()) {
+	// The Claude app answers without an API key.
+	if (claude_app && !claude_app_installed()) {
+		key = "Hindsight.FilterNeedsClaudeApp";
+		type = OBS_TEXT_INFO_WARNING;
+	} else if (!claude_app && secret_store_get().claude_api_key.empty()) {
 		key = "Hindsight.FilterNeedsKey";
 		type = OBS_TEXT_INFO_WARNING;
 	} else if (speech_failed) {
@@ -412,20 +418,23 @@ obs_properties_t *get_properties(void *data)
 	obs_properties_t *props = obs_properties_create();
 	add_update_notice(props, static_cast<HindsightFilter *>(data));
 
-	add_ready_line(props);
+	const bool claude_app = plugin_settings_destination() == AnswerDestination::claude_app;
+	add_ready_line(props, claude_app);
 
 #ifdef HINDSIGHT_ACCESS_CODES
-	obs_property_t *note =
-		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.DeliveryNote"), OBS_TEXT_INFO);
+	const char *note_key = claude_app ? "Hindsight.ClaudeAppNote" : "Hindsight.DeliveryNote";
 #else
-	obs_property_t *note =
-		obs_properties_add_text(props, "spike_note", obs_module_text("Hindsight.SpikeNote"), OBS_TEXT_INFO);
+	const char *note_key = claude_app ? "Hindsight.ClaudeAppNote" : "Hindsight.SpikeNote";
 #endif
+	obs_property_t *note = obs_properties_add_text(props, "spike_note", obs_module_text(note_key), OBS_TEXT_INFO);
 	obs_property_text_set_info_type(note, OBS_TEXT_INFO_NORMAL);
 
 #ifndef HINDSIGHT_ACCESS_CODES
-	// With access codes, DGG Connect knows who to message.
-	obs_properties_add_text(props, "discord_user_id", obs_module_text("Hindsight.DiscordUserId"), OBS_TEXT_DEFAULT);
+	// With access codes, DGG Connect knows who to message, and the Claude app
+	// needs no one.
+	if (!claude_app)
+		obs_properties_add_text(props, "discord_user_id", obs_module_text("Hindsight.DiscordUserId"),
+					OBS_TEXT_DEFAULT);
 #endif
 	obs_properties_add_int_slider(props, "window_seconds", obs_module_text("Hindsight.WindowSeconds"),
 				      kMinWindowSeconds, kMaxWindowSeconds, 1);
