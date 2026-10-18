@@ -71,7 +71,7 @@ const char *transcript_problem(Transcript::Outcome outcome)
 }
 
 #ifdef HINDSIGHT_ACCESS_CODES
-// DMs the answer to the streamer through DGG Connect.
+// DMs the answer to the streamer through Digital Ground Game Connect.
 void send_to_discord(const ClaudeAnswer &reply, uint64_t start)
 {
 	const std::string code = secret_store_get().hindsight_code;

@@ -424,7 +424,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_text_set_info_type(note, OBS_TEXT_INFO_NORMAL);
 
 #ifndef HINDSIGHT_ACCESS_CODES
-	// With access codes, DGG Connect knows who to message.
+	// With access codes, Digital Ground Game Connect knows who to message.
 	obs_properties_add_text(props, "discord_user_id", obs_module_text("Hindsight.DiscordUserId"), OBS_TEXT_DEFAULT);
 #endif
 	obs_properties_add_int_slider(props, "window_seconds", obs_module_text("Hindsight.WindowSeconds"),
