@@ -31,6 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
@@ -42,6 +43,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPainter>
 #include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
@@ -50,6 +52,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 
 namespace {
@@ -59,6 +63,9 @@ constexpr const char *kGetClaudeKeyUrl = "https://platform.claude.com/settings/k
 
 // Digital Ground Game's website, linked from the window's footer.
 constexpr const char *kDggUrl = "https://digitalgroundgame.org";
+
+// Hindsight's own page, the footer's Help link.
+constexpr const char *kHelpUrl = "https://connect.digitalgroundgame.org/hindsight";
 
 #ifdef HINDSIGHT_ACCESS_CODES
 // Where a streamer signs in with Discord to get their Hindsight code.
@@ -120,6 +127,48 @@ void set_class(QLabel *label, const char *name)
 	label->style()->polish(label);
 }
 
+// A status line's mark or message, on one line. Text too long for the space
+// ends in "…", and the whole message is in its tooltip. A message sits on the
+// baseline of the theme's font. A mark (bold) is centred on the middle of
+// the message's capital letters, by the shape of its own glyph, so ✓, ✕ and !
+// line up with the text beside them whatever font they come from.
+class OneLineLabel : public QLabel {
+public:
+	// A bold label is bolded when drawn, not with setFont, which would fix
+	// its font before the theme's font size applies.
+	explicit OneLineLabel(QWidget *parent, bool bold = false) : QLabel(parent), bold_(bold) {}
+
+	// Narrow enough that a long message never widens the window.
+	QSize minimumSizeHint() const override { return {0, QLabel::minimumSizeHint().height()}; }
+	QSize sizeHint() const override { return {0, QLabel::sizeHint().height()}; }
+
+protected:
+	void paintEvent(QPaintEvent *) override
+	{
+		QPainter painter(this);
+		QFont drawn = font();
+		drawn.setBold(bold_);
+		painter.setFont(drawn);
+		const QRect area = contentsRect();
+		const QFontMetrics metrics(drawn);
+		const QString shown = metrics.elidedText(text(), Qt::ElideRight, area.width());
+		const int width = metrics.horizontalAdvance(shown);
+		const int x = alignment() & Qt::AlignHCenter ? area.left() + (area.width() - width) / 2 : area.left();
+		const QFontMetrics text_metrics = fontMetrics();
+		int baseline = area.top() + (area.height() - text_metrics.height()) / 2 + text_metrics.ascent();
+		if (bold_) {
+			const QRect glyph = metrics.tightBoundingRect(shown);
+			const int middle = baseline - static_cast<int>(text_metrics.capHeight() / 2);
+			baseline = middle - (glyph.top() + glyph.bottom()) / 2;
+		}
+		painter.setPen(palette().color(isEnabled() ? QPalette::Active : QPalette::Disabled, foregroundRole()));
+		painter.drawText(QPoint(x, baseline), shown);
+	}
+
+private:
+	bool bold_;
+};
+
 // One line of the Status box: a coloured mark, what it means, and room for a
 // button or two on the right.
 struct StatusLine {
@@ -132,14 +181,14 @@ StatusLine add_status_line(QGridLayout *grid, QWidget *parent)
 {
 	StatusLine line;
 	const int row = grid->rowCount();
-	line.mark = new QLabel(parent);
+	line.mark = new OneLineLabel(parent, true);
+	line.mark->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+	line.mark->ensurePolished();
 	QFont bold = line.mark->font();
 	bold.setBold(true);
-	line.mark->setFont(bold);
-	line.mark->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
-	line.mark->setMinimumWidth(line.mark->fontMetrics().horizontalAdvance(QStringLiteral("✕")) + 4);
-	line.label = new QLabel(parent);
-	line.label->setWordWrap(true);
+	line.mark->setMinimumWidth(QFontMetrics(bold).horizontalAdvance(QStringLiteral("✕")) + 4);
+	line.label = new OneLineLabel(parent);
+	line.label->setObjectName(QStringLiteral("status-line"));
 	line.buttons = new QHBoxLayout();
 	grid->addWidget(line.mark, row, 0);
 	grid->addWidget(line.label, row, 1);
@@ -152,6 +201,7 @@ void show_status(const StatusLine &line, Mark mark, const QString &message)
 	line.mark->setText(QString::fromUtf8(mark_glyph(mark)));
 	set_class(line.mark, mark_class(mark));
 	line.label->setText(message);
+	line.label->setToolTip(message);
 }
 
 // Shows or hides a whole status line, its buttons included.
@@ -172,11 +222,34 @@ struct KeyRow {
 	QPushButton *forget = nullptr;
 	// Takes Forget's place while no key is saved, if given.
 	QPushButton *get_key = nullptr;
+	// Holds the button column's place while no button shows.
+	QPushButton *button_space = nullptr;
 	QHBoxLayout *line = nullptr; // the row's field, for hiding the row
 	StatusLine status;
 	const char *saved_text = nullptr;
 	const char *missing_text = nullptr;
 };
+
+// Whether a hidden widget still takes its place in the layout.
+void keep_space(QWidget *widget, bool keep)
+{
+	QSizePolicy policy = widget->sizePolicy();
+	policy.setRetainSizeWhenHidden(keep);
+	widget->setSizePolicy(policy);
+}
+
+// The place of a button that never shows, so a box with no button ends where
+// the others do and its row is as tall as theirs. It's a hidden button rather
+// than an empty widget because the theme gives buttons a margin that makes
+// their rows taller; open_settings_dialog sizes it like the real ones.
+QPushButton *add_button_space(QHBoxLayout *line, QWidget *parent)
+{
+	auto *space = new QPushButton(parent);
+	space->hide();
+	keep_space(space, true);
+	line->addWidget(space);
+	return space;
+}
 
 void show_saved_state(const KeyRow &row, bool saved)
 {
@@ -185,6 +258,9 @@ void show_saved_state(const KeyRow &row, bool saved)
 	row.forget->setVisible(saved);
 	if (row.get_key)
 		row.get_key->setVisible(!saved);
+	// Hidden again in case QFormLayout::setRowVisible showed it.
+	row.button_space->hide();
+	keep_space(row.button_space, !saved && !row.get_key);
 	show_status(row.status, saved ? Mark::good : Mark::attention, text(saved ? row.saved_text : row.missing_text));
 }
 
@@ -201,6 +277,7 @@ KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent, QWidge
 	row.line->addWidget(row.forget);
 	if (extra)
 		row.line->addWidget(extra);
+	row.button_space = add_button_space(row.line, parent);
 	form->addRow(text(label), row.line);
 	return row;
 }
@@ -363,8 +440,6 @@ Mark update_mark(const UpdateNotice &notice)
 void add_update_line(QGridLayout *grid, QDialog *dialog)
 {
 	const StatusLine line = add_status_line(grid, dialog);
-	// One line only; the Update now tooltip has the details.
-	line.label->setWordWrap(false);
 	auto *progress = new QProgressBar(dialog);
 	progress->setRange(0, 100);
 	grid->addWidget(progress, grid->rowCount(), 1, 1, 2);
@@ -405,6 +480,50 @@ void add_update_line(QGridLayout *grid, QDialog *dialog)
 	timer->start(500);
 }
 
+double luminance(const QColor &color)
+{
+	auto channel = [](double c) {
+		return c <= 0.03928 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+	};
+	return 0.2126 * channel(color.redF()) + 0.7152 * channel(color.greenF()) + 0.0722 * channel(color.blueF());
+}
+
+double contrast(const QColor &a, const QColor &b)
+{
+	const double la = luminance(a);
+	const double lb = luminance(b);
+	return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
+
+// The theme's link colour, moved toward its text colour until it reads
+// clearly on both the window and the boxes (4.5:1, the WCAG level for body
+// text). Yami's blue is about 3:1 on its boxes' grey, so it comes out lighter
+// there; a theme whose links already read clearly keeps them as they are.
+// OBS themes set the application's palette (Window for the window, Base for
+// the boxes); a label's own palette doesn't have the real colours. The colour
+// goes on the label's links. Call this again after changing the label's text.
+void make_links_readable(QLabel *label)
+{
+	const QPalette palette = QApplication::palette();
+	const QColor window = palette.color(QPalette::Window);
+	const QColor box = palette.color(QPalette::Base);
+	const QColor text_colour = palette.color(QPalette::WindowText);
+	const QColor link = palette.color(QPalette::Link);
+	auto reads_clearly = [&](const QColor &colour) {
+		return std::min(contrast(colour, window), contrast(colour, box)) >= 4.5;
+	};
+	QColor readable = link;
+	for (int step = 1; step <= 10 && !reads_clearly(readable); step++) {
+		const double t = step / 10.0;
+		readable.setRgbF(static_cast<float>(link.redF() + (text_colour.redF() - link.redF()) * t),
+				 static_cast<float>(link.greenF() + (text_colour.greenF() - link.greenF()) * t),
+				 static_cast<float>(link.blueF() + (text_colour.blueF() - link.blueF()) * t));
+	}
+	QString html = label->text();
+	html.replace(QStringLiteral("<a href="), QStringLiteral("<a style='color: %1' href=").arg(readable.name()));
+	label->setText(html);
+}
+
 // A short grey line under a box's controls; the details are in its tooltip.
 QLabel *add_note(QLayout *layout, const char *note, const char *details, QWidget *parent)
 {
@@ -417,7 +536,7 @@ QLabel *add_note(QLayout *layout, const char *note, const char *details, QWidget
 	return label;
 }
 
-// The DGG logo and a link to the website, above the Save button.
+// The DGG logo, a link to the website and a Help link, above the Save button.
 void add_footer(QVBoxLayout *layout, QWidget *parent)
 {
 	auto *footer = new QHBoxLayout();
@@ -437,7 +556,14 @@ void add_footer(QVBoxLayout *layout, QWidget *parent)
 	}
 	auto *link = new QLabel(text("Hindsight.MadeBy").arg(QString::fromUtf8(kDggUrl)), parent);
 	link->setOpenExternalLinks(true);
+	make_links_readable(link);
 	footer->addWidget(link, 1);
+	auto *help = new QLabel(QStringLiteral("<a href='%1'>%2</a>")
+					.arg(QString::fromUtf8(kHelpUrl), text("Hindsight.Help").toHtmlEscaped()),
+				parent);
+	help->setOpenExternalLinks(true);
+	make_links_readable(help);
+	footer->addWidget(help);
 	layout->addLayout(footer);
 }
 
@@ -449,6 +575,15 @@ void open_settings_dialog(void *)
 	dialog.setMinimumWidth(520);
 
 	auto *layout = new QVBoxLayout(&dialog);
+	// Rows shown while the window is open would otherwise be squeezed into
+	// its old height, so it grows to fit them.
+	auto fit_window = [dialog = &dialog]() {
+		QTimer::singleShot(0, dialog, [dialog]() {
+			const int needed = dialog->sizeHint().height();
+			if (dialog->height() < needed)
+				dialog->resize(dialog->width(), needed);
+		});
+	};
 
 	// Status: one line per thing Hindsight needs, each with its mark, so a
 	// streamer can tell at a glance whether it is ready.
@@ -461,6 +596,8 @@ void open_settings_dialog(void *)
 	auto *keys_box = new QGroupBox(text("Hindsight.KeysTitle"), &dialog);
 	auto *keys = new QVBoxLayout(keys_box);
 	auto *form = new QFormLayout();
+	// The same gap between every row, with or without a button in it.
+	form->setSpacing(8);
 	keys->addLayout(form);
 	auto *get_claude_key = new QPushButton(text("Hindsight.GetClaudeKey"), &dialog);
 	get_claude_key->setToolTip(text("Hindsight.GetClaudeKeyNote"));
@@ -492,7 +629,10 @@ void open_settings_dialog(void *)
 	auto *user_id = new QLineEdit(QString::fromStdString(plugin_settings_discord_user_id()), &dialog);
 	user_id->setPlaceholderText(text("Hindsight.DiscordUserIdPlaceholder"));
 	user_id->setToolTip(text("Hindsight.DiscordUserIdNote"));
-	form->addRow(text("Hindsight.DiscordUserId"), user_id);
+	auto *user_id_line = new QHBoxLayout();
+	user_id_line->addWidget(user_id, 1);
+	[[maybe_unused]] QPushButton *user_id_space = add_button_space(user_id_line, &dialog);
+	form->addRow(text("Hindsight.DiscordUserId"), user_id_line);
 	add_note(keys, "Hindsight.SettingsNote", "Hindsight.SettingsNoteDetails", &dialog);
 
 #ifdef HINDSIGHT_ACCESS_CODES
@@ -502,13 +642,14 @@ void open_settings_dialog(void *)
 	auto *switch_link = new QLabel(&dialog);
 	set_class(switch_link, "text-muted");
 	keys->addWidget(switch_link);
-	auto show_delivery = [form, code, discord, user_id, switch_link, own_bot]() {
+	auto show_delivery = [form, code, discord, user_id_line, user_id_space, switch_link, own_bot]() {
 		const bool bot = *own_bot;
 		// QFormLayout shows or hides every widget in a row, so the shown
 		// row's Forget and Get buttons are then set again.
 		form->setRowVisible(code.line, !bot);
 		form->setRowVisible(discord.line, bot);
-		form->setRowVisible(user_id, bot);
+		form->setRowVisible(user_id_line, bot);
+		user_id_space->hide();
 		const Secrets saved = secret_store_get();
 		if (bot)
 			show_saved_state(discord, !saved.discord_bot_token.empty());
@@ -519,10 +660,12 @@ void open_settings_dialog(void *)
 		switch_link->setText(
 			QStringLiteral("<a href='#'>%1</a>")
 				.arg(text(bot ? "Hindsight.UseCode" : "Hindsight.UseOwnBot").toHtmlEscaped()));
+		make_links_readable(switch_link);
 	};
-	QObject::connect(switch_link, &QLabel::linkActivated, &dialog, [own_bot, show_delivery]() {
+	QObject::connect(switch_link, &QLabel::linkActivated, &dialog, [own_bot, show_delivery, fit_window]() {
 		*own_bot = !*own_bot;
 		show_delivery();
+		fit_window();
 	});
 #endif
 	layout->addWidget(keys_box);
@@ -587,8 +730,10 @@ void open_settings_dialog(void *)
 	claude_form->addRow(text("Hindsight.ClaudeModel"), model);
 	// The dropdown is only for picking the model by hand.
 	claude_form->setRowVisible(model, !was_options.auto_model);
-	QObject::connect(auto_model, &QCheckBox::toggled, &dialog,
-			 [claude_form, model](bool on) { claude_form->setRowVisible(model, !on); });
+	QObject::connect(auto_model, &QCheckBox::toggled, &dialog, [claude_form, model, fit_window](bool on) {
+		claude_form->setRowVisible(model, !on);
+		fit_window();
+	});
 
 	auto *web_search = new QCheckBox(text("Hindsight.WebSearch"), &dialog);
 	web_search->setChecked(was_options.web_search);
@@ -724,6 +869,32 @@ void open_settings_dialog(void *)
 		show_delivery();
 #endif
 	});
+
+	// Every button beside a box or a status line has the same width, so they
+	// line up in one column, and the boxes beside them the same height.
+	QList<QPushButton *> side_buttons;
+	for (QPushButton *button : dialog.findChildren<QPushButton *>())
+		if (!qobject_cast<QDialogButtonBox *>(button->parentWidget()))
+			side_buttons.append(button);
+	const QList<QLineEdit *> boxes = dialog.findChildren<QLineEdit *>();
+	int width = 0;
+	int height = 0;
+	for (QPushButton *button : side_buttons) {
+		button->ensurePolished();
+		width = std::max(width, button->sizeHint().width());
+		height = std::max(height, button->sizeHint().height());
+	}
+	for (QLineEdit *box : boxes) {
+		box->ensurePolished();
+		height = std::max(height, box->sizeHint().height());
+	}
+	for (QPushButton *button : side_buttons)
+		button->setFixedSize(width, height);
+	for (QLineEdit *box : boxes)
+		box->setFixedHeight(height);
+	// Status lines with and without a button are the same height too.
+	for (QWidget *line : dialog.findChildren<QWidget *>(QStringLiteral("status-line")))
+		line->setMinimumHeight(height);
 
 	dialog.exec();
 }
