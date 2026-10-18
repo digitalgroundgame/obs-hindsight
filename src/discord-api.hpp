@@ -23,7 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // What Hindsight sends to Discord to DM the answer from the streamer's own
 // bot, and how it reads the replies. Kept free of OBS and curl so the tests
 // can run it on its own; discord-client.cpp does the sending. Builds with
-// HINDSIGHT_ACCESS_CODES send through DGG Connect unless the streamer picks
+// HINDSIGHT_ACCESS_CODES send through Digital Ground Game Connect unless the streamer picks
 // their own bot instead.
 // https://docs.discord.com/developers/reference
 

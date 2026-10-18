@@ -46,7 +46,7 @@ bool plugin_settings_set_claude_options(const ClaudeOptions &options);
 // they enter it.
 std::string plugin_settings_discord_user_id();
 
-// Whether answers go through the streamer's own Discord bot rather than DGG
+// Whether answers go through the streamer's own Discord bot rather than Digital Ground Game
 // Connect. Off unless the streamer chose it; builds without
 // HINDSIGHT_ACCESS_CODES always use the bot and ignore this.
 bool plugin_settings_use_own_bot();

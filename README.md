@@ -112,7 +112,7 @@ Discord DMs, and writes them to the OBS log.
    clip now** in the filter's settings).
 7. **Help > Log Files > View Current Log** shows what Hindsight heard, the
    question Claude found and its answer, with timings, plus where the clip was
-   saved as a WAV. Hindsight keeps the last 10 clips; **Delete saved clips**
+   saved as a WAV. Hindsight keeps the last 10 clips; **Delete clips**
    in Tools > Hindsight settings removes them all. Because the log holds what
    you said, check it before sharing it publicly.
 
@@ -122,7 +122,7 @@ Each time OBS starts, Hindsight asks GitHub once for the latest release. If a
 newer one is out, the top of the Hindsight filter's settings and of **Tools >
 Hindsight settings** says so, and the OBS log notes it. If GitHub cannot be
 reached, Hindsight carries on without a notice. When there is no notice,
-**Tools > Hindsight settings** has a **Check for updates** button to ask again
+**Tools > Hindsight settings** has a **Check now** button to ask again
 at any time.
 
 On Windows the notice has an **Update now** button. It downloads the new
@@ -132,7 +132,7 @@ prompt, then **Install**. The installer closes OBS for you, and its last page
 offers to start OBS again. The button waits while you are streaming or
 recording, since the update closes OBS. If the download or the check fails, the
 notice says so and offers the release page instead. On other systems the notice
-has a **Download the update** button that opens the release page.
+has a **Download** button that opens the release page.
 
 ### What the update check sends
 

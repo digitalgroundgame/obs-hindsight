@@ -37,6 +37,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QDialog>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QEvent>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -44,6 +45,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
@@ -55,6 +57,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <vector>
 
 namespace {
 
@@ -214,71 +217,179 @@ void set_status_visible(const StatusLine &line, bool visible)
 			button->setVisible(visible);
 }
 
-// One key's row: a password box that starts empty (saved keys are never
-// shown) and a button to forget the saved key. Its line in the Status box says
-// whether one is saved.
+// A small circled "i" that says a setting has a tooltip. The tooltip goes on
+// the whole row (with_info), so hovering anywhere on it shows the tooltip.
+QLabel *info_icon(QWidget *parent)
+{
+	const qreal ratio = qApp->devicePixelRatio();
+	QPixmap pixmap(QSize(14, 14) * ratio);
+	pixmap.setDevicePixelRatio(ratio);
+	pixmap.fill(Qt::transparent);
+	QPainter painter(&pixmap);
+	painter.setRenderHint(QPainter::Antialiasing);
+	QColor colour = QApplication::palette().color(QPalette::Text);
+	colour.setAlphaF(0.6f);
+	painter.setPen(QPen(colour, 1.2));
+	painter.drawEllipse(QRectF(1, 1, 12, 12));
+	painter.setPen(Qt::NoPen);
+	painter.setBrush(colour);
+	painter.drawEllipse(QPointF(7, 4.4), 0.9, 0.9);
+	painter.drawRoundedRect(QRectF(6.25, 6, 1.5, 4.6), 0.6, 0.6);
+	painter.end();
+	auto *icon = new QLabel(parent);
+	icon->setPixmap(pixmap);
+	return icon;
+}
+
+// widget followed by an info icon, in one widget carrying the tooltip.
+QWidget *with_info(QWidget *widget, const QString &tooltip, QWidget *parent)
+{
+	auto *row = new QWidget(parent);
+	auto *line = new QHBoxLayout(row);
+	line->setContentsMargins(0, 0, 0, 0);
+	line->setSpacing(6);
+	line->addWidget(widget);
+	line->addWidget(info_icon(row));
+	line->addStretch(1);
+	row->setToolTip(tooltip);
+	return row;
+}
+
+// A form label with an info icon; its field gets the same tooltip.
+QWidget *info_label(const char *label, const QString &tooltip, QWidget *field, QWidget *parent)
+{
+	field->setToolTip(tooltip);
+	return with_info(new QLabel(text(label), parent), tooltip, parent);
+}
+
+// One key's row: a password box holding the saved key, shown as dots until
+// the eye inside the box is clicked, and, if given, a button to get a key,
+// shown while the box is empty. Emptying the box and saving removes the key.
+// Its line in the Status box says whether one is saved.
 struct KeyRow {
 	QLineEdit *edit = nullptr;
-	QPushButton *forget = nullptr;
-	// Takes Forget's place while no key is saved, if given.
 	QPushButton *get_key = nullptr;
-	// Holds the button column's place while no button shows.
-	QPushButton *button_space = nullptr;
 	QHBoxLayout *line = nullptr; // the row's field, for hiding the row
 	StatusLine status;
+	SecretKey key = SecretKey::ClaudeApiKey;
 	const char *saved_text = nullptr;
 	const char *missing_text = nullptr;
 };
 
-// Whether a hidden widget still takes its place in the layout.
-void keep_space(QWidget *widget, bool keep)
+// An eye, crossed out once the key is showing, drawn in the theme's text
+// colour, muted unless the pointer is on it (Qt has no eye among its standard
+// icons).
+QIcon eye_icon(bool crossed, bool hovered)
 {
-	QSizePolicy policy = widget->sizePolicy();
-	policy.setRetainSizeWhenHidden(keep);
-	widget->setSizePolicy(policy);
+	const qreal ratio = qApp->devicePixelRatio();
+	QPixmap pixmap(QSize(16, 16) * ratio);
+	pixmap.setDevicePixelRatio(ratio);
+	pixmap.fill(Qt::transparent);
+	QPainter painter(&pixmap);
+	painter.setRenderHint(QPainter::Antialiasing);
+	QColor colour = QApplication::palette().color(QPalette::Text);
+	if (!hovered)
+		colour.setAlphaF(0.5f);
+	painter.setPen(QPen(colour, 1.4));
+	QPainterPath outline;
+	outline.moveTo(1.5, 8);
+	outline.quadTo(8, 1.5, 14.5, 8);
+	outline.quadTo(8, 14.5, 1.5, 8);
+	painter.drawPath(outline);
+	painter.setBrush(colour);
+	painter.drawEllipse(QPointF(8, 8), 2.2, 2.2);
+	if (crossed)
+		painter.drawLine(QPointF(2.5, 13.5), QPointF(13.5, 2.5));
+	return QIcon(pixmap);
 }
 
-// The place of a button that never shows, so a box with no button ends where
-// the others do and its row is as tall as theirs. It's a hidden button rather
-// than an empty widget because the theme gives buttons a margin that makes
-// their rows taller; open_settings_dialog sizes it like the real ones.
-QPushButton *add_button_space(QHBoxLayout *line, QWidget *parent)
+// Redraws the eye when the pointer moves onto or off its button. QLineEdit
+// draws an action's icon the same way hovered or not.
+class EyeHover : public QObject {
+public:
+	EyeHover(QAction *eye, QLineEdit *edit) : QObject(eye), eye_(eye), edit_(edit) {}
+
+	void redraw(bool hovered) { eye_->setIcon(eye_icon(edit_->echoMode() == QLineEdit::Normal, hovered)); }
+
+protected:
+	bool eventFilter(QObject *, QEvent *event) override
+	{
+		if (event->type() == QEvent::Enter)
+			redraw(true);
+		else if (event->type() == QEvent::Leave)
+			redraw(false);
+		return false;
+	}
+
+private:
+	QAction *eye_;
+	QLineEdit *edit_;
+};
+
+std::string saved_key(const Secrets &saved, SecretKey key)
 {
-	auto *space = new QPushButton(parent);
-	space->hide();
-	keep_space(space, true);
-	line->addWidget(space);
-	return space;
+	switch (key) {
+	case SecretKey::ClaudeApiKey:
+		return saved.claude_api_key;
+	case SecretKey::DiscordBotToken:
+		return saved.discord_bot_token;
+	case SecretKey::HindsightCode:
+		return saved.hindsight_code;
+	}
+	return {};
 }
 
-void show_saved_state(const KeyRow &row, bool saved)
+// Puts the saved key in the box and says on its status line whether there is
+// one.
+void show_saved_state(const KeyRow &row, const Secrets &saved)
 {
-	row.edit->setPlaceholderText(text(saved ? "Hindsight.KeySaved" : "Hindsight.KeyNotSet"));
-	// Forget while a key is saved, the button to get one while it isn't.
-	row.forget->setVisible(saved);
+	const std::string key = saved_key(saved, row.key);
+	row.edit->setText(QString::fromStdString(key));
+	// setRowVisible shows every widget in a row, so this follows it too.
 	if (row.get_key)
-		row.get_key->setVisible(!saved);
-	// Hidden again in case QFormLayout::setRowVisible showed it.
-	row.button_space->hide();
-	keep_space(row.button_space, !saved && !row.get_key);
-	show_status(row.status, saved ? Mark::good : Mark::attention, text(saved ? row.saved_text : row.missing_text));
+		row.get_key->setVisible(key.empty());
+	show_status(row.status, key.empty() ? Mark::attention : Mark::good,
+		    text(key.empty() ? row.missing_text : row.saved_text));
 }
 
-// extra, if given, goes beside the Forget button.
-KeyRow add_key_row(QFormLayout *form, const char *label, QWidget *parent, QWidget *extra = nullptr)
+KeyRow add_key_row(QFormLayout *form, const char *label, const char *note, SecretKey key, QWidget *parent,
+		   QPushButton *get_key = nullptr)
 {
 	KeyRow row;
+	row.key = key;
+	row.get_key = get_key;
 	row.edit = new QLineEdit(parent);
 	row.edit->setEchoMode(QLineEdit::Password);
-	row.forget = new QPushButton(text("Hindsight.Forget"), parent);
+	row.edit->setPlaceholderText(text("Hindsight.KeyNotSet"));
+
+	QAction *eye = row.edit->addAction(eye_icon(false, false), QLineEdit::TrailingPosition);
+	eye->setToolTip(text("Hindsight.ShowKey"));
+	// Only a box with a key in it has anything to show.
+	eye->setVisible(false);
+	QLineEdit *edit = row.edit;
+	auto *hover = new EyeHover(eye, edit);
+	for (QObject *button : eye->associatedObjects())
+		if (button != edit)
+			button->installEventFilter(hover);
+	QObject::connect(eye, &QAction::triggered, edit, [edit, eye, hover]() {
+		const bool show = edit->echoMode() == QLineEdit::Password;
+		edit->setEchoMode(show ? QLineEdit::Normal : QLineEdit::Password);
+		hover->redraw(true);
+		eye->setToolTip(text(show ? "Hindsight.HideKey" : "Hindsight.ShowKey"));
+	});
+	QObject::connect(edit, &QLineEdit::textChanged, eye,
+			 [eye](const QString &typed) { eye->setVisible(!typed.isEmpty()); });
 
 	row.line = new QHBoxLayout();
 	row.line->addWidget(row.edit, 1);
-	row.line->addWidget(row.forget);
-	if (extra)
-		row.line->addWidget(extra);
-	row.button_space = add_button_space(row.line, parent);
-	form->addRow(text(label), row.line);
+	if (get_key) {
+		row.line->addWidget(get_key);
+		// The button to get a key while the box is empty; without a
+		// button, the box takes the whole row.
+		QObject::connect(edit, &QLineEdit::textChanged, get_key,
+				 [get_key](const QString &typed) { get_key->setVisible(typed.isEmpty()); });
+	}
+	form->addRow(info_label(label, text(note), row.edit, parent), row.line);
 	return row;
 }
 
@@ -536,7 +647,7 @@ QLabel *add_note(QLayout *layout, const char *note, const char *details, QWidget
 	return label;
 }
 
-// The DGG logo, a link to the website and a Help link, above the Save button.
+// The Digital Ground Game logo, a link to the website and a Help link, above the Save button.
 void add_footer(QVBoxLayout *layout, QWidget *parent)
 {
 	auto *footer = new QHBoxLayout();
@@ -601,8 +712,8 @@ void open_settings_dialog(void *)
 	keys->addLayout(form);
 	auto *get_claude_key = new QPushButton(text("Hindsight.GetClaudeKey"), &dialog);
 	get_claude_key->setToolTip(text("Hindsight.GetClaudeKeyNote"));
-	KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", &dialog, get_claude_key);
-	claude.get_key = get_claude_key;
+	KeyRow claude = add_key_row(form, "Hindsight.ClaudeApiKey", "Hindsight.ClaudeApiKeyNote",
+				    SecretKey::ClaudeApiKey, &dialog, get_claude_key);
 	claude.status = add_status_line(status, &dialog);
 	claude.saved_text = "Hindsight.ClaudeKeySaved";
 	claude.missing_text = "Hindsight.ClaudeKeyMissing";
@@ -610,8 +721,8 @@ void open_settings_dialog(void *)
 			 []() { QDesktopServices::openUrl(QUrl(QString::fromUtf8(kGetClaudeKeyUrl))); });
 #ifdef HINDSIGHT_ACCESS_CODES
 	auto *get_code = new QPushButton(text("Hindsight.GetCode"), &dialog);
-	KeyRow code = add_key_row(form, "Hindsight.HindsightCode", &dialog, get_code);
-	code.get_key = get_code;
+	KeyRow code = add_key_row(form, "Hindsight.HindsightCode", "Hindsight.HindsightCodeNote",
+				  SecretKey::HindsightCode, &dialog, get_code);
 	code.status = add_status_line(status, &dialog);
 	code.saved_text = "Hindsight.CodeSaved";
 	code.missing_text = "Hindsight.CodeMissing";
@@ -621,19 +732,22 @@ void open_settings_dialog(void *)
 #endif
 	// The streamer's own Discord bot: the only way to get answers in builds
 	// without access codes, and the alternative to a code in builds with them.
-	KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", &dialog);
+	KeyRow discord = add_key_row(form, "Hindsight.DiscordBotToken", "Hindsight.DiscordBotTokenNote",
+				     SecretKey::DiscordBotToken, &dialog);
 	discord.status = add_status_line(status, &dialog);
 	discord.saved_text = "Hindsight.DiscordTokenSaved";
 	discord.missing_text = "Hindsight.DiscordTokenMissing";
 	// Not a secret, so it's shown and edited in place.
 	auto *user_id = new QLineEdit(QString::fromStdString(plugin_settings_discord_user_id()), &dialog);
 	user_id->setPlaceholderText(text("Hindsight.DiscordUserIdPlaceholder"));
-	user_id->setToolTip(text("Hindsight.DiscordUserIdNote"));
-	auto *user_id_line = new QHBoxLayout();
-	user_id_line->addWidget(user_id, 1);
-	[[maybe_unused]] QPushButton *user_id_space = add_button_space(user_id_line, &dialog);
-	form->addRow(text("Hindsight.DiscordUserId"), user_id_line);
+	form->addRow(info_label("Hindsight.DiscordUserId", text("Hindsight.DiscordUserIdNote"), user_id, &dialog),
+		     user_id);
+#ifdef _WIN32
+	// secret-seal.cpp encrypts the keys for the Windows account.
+	add_note(keys, "Hindsight.SettingsNoteWindows", "Hindsight.SettingsNoteWindowsDetails", &dialog);
+#else
 	add_note(keys, "Hindsight.SettingsNote", "Hindsight.SettingsNoteDetails", &dialog);
+#endif
 
 #ifdef HINDSIGHT_ACCESS_CODES
 	// The code is the default. A small link swaps the code's row for the
@@ -642,19 +756,15 @@ void open_settings_dialog(void *)
 	auto *switch_link = new QLabel(&dialog);
 	set_class(switch_link, "text-muted");
 	keys->addWidget(switch_link);
-	auto show_delivery = [form, code, discord, user_id_line, user_id_space, switch_link, own_bot]() {
+	auto show_delivery = [form, code, discord, user_id, switch_link, own_bot]() {
 		const bool bot = *own_bot;
-		// QFormLayout shows or hides every widget in a row, so the shown
-		// row's Forget and Get buttons are then set again.
+		// QFormLayout shows every widget in a row, so the shown row's Get
+		// button is then set again.
 		form->setRowVisible(code.line, !bot);
 		form->setRowVisible(discord.line, bot);
-		form->setRowVisible(user_id_line, bot);
-		user_id_space->hide();
-		const Secrets saved = secret_store_get();
-		if (bot)
-			show_saved_state(discord, !saved.discord_bot_token.empty());
-		else
-			show_saved_state(code, !saved.hindsight_code.empty());
+		form->setRowVisible(user_id, bot);
+		if (!bot)
+			code.get_key->setVisible(code.edit->text().isEmpty());
 		set_status_visible(code.status, !bot);
 		set_status_visible(discord.status, bot);
 		switch_link->setText(
@@ -674,35 +784,14 @@ void open_settings_dialog(void *)
 	add_update_line(status, &dialog);
 
 	const Secrets saved = secret_store_get();
-	show_saved_state(claude, !saved.claude_api_key.empty());
+	show_saved_state(claude, saved);
 #ifdef HINDSIGHT_ACCESS_CODES
-	show_saved_state(code, !saved.hindsight_code.empty());
+	show_saved_state(code, saved);
 #endif
-	show_saved_state(discord, !saved.discord_bot_token.empty());
+	show_saved_state(discord, saved);
 #ifdef HINDSIGHT_ACCESS_CODES
 	show_delivery();
 #endif
-
-	QObject::connect(claude.forget, &QPushButton::clicked, &dialog, [claude]() {
-		if (secret_store_forget(SecretKey::ClaudeApiKey)) {
-			claude.edit->clear();
-			show_saved_state(claude, false);
-		}
-	});
-#ifdef HINDSIGHT_ACCESS_CODES
-	QObject::connect(code.forget, &QPushButton::clicked, &dialog, [code]() {
-		if (secret_store_forget(SecretKey::HindsightCode)) {
-			code.edit->clear();
-			show_saved_state(code, false);
-		}
-	});
-#endif
-	QObject::connect(discord.forget, &QPushButton::clicked, &dialog, [discord]() {
-		if (secret_store_forget(SecretKey::DiscordBotToken)) {
-			discord.edit->clear();
-			show_saved_state(discord, false);
-		}
-	});
 
 	// Claude: which model answers, and whether it may search the web. Saved
 	// with Save or Apply; the next question uses them.
@@ -714,7 +803,7 @@ void open_settings_dialog(void *)
 	auto *auto_model = new QCheckBox(text("Hindsight.AutoModel"), &dialog);
 	auto_model->setChecked(was_options.auto_model);
 	auto_model->setToolTip(text("Hindsight.AutoModelNote"));
-	claude_form->addRow(auto_model);
+	claude_form->addRow(with_info(auto_model, auto_model->toolTip(), &dialog));
 
 	auto *model = new QComboBox(&dialog);
 	for (const ClaudeModel &choice : kClaudeModels) {
@@ -727,7 +816,7 @@ void open_settings_dialog(void *)
 	}
 	model->setCurrentIndex(model->findData(QString::fromUtf8(was_options.model.c_str())));
 	model->setToolTip(text("Hindsight.ClaudeModelNote"));
-	claude_form->addRow(text("Hindsight.ClaudeModel"), model);
+	claude_form->addRow(info_label("Hindsight.ClaudeModel", model->toolTip(), model, &dialog), model);
 	// The dropdown is only for picking the model by hand.
 	claude_form->setRowVisible(model, !was_options.auto_model);
 	QObject::connect(auto_model, &QCheckBox::toggled, &dialog, [claude_form, model, fit_window](bool on) {
@@ -738,7 +827,7 @@ void open_settings_dialog(void *)
 	auto *web_search = new QCheckBox(text("Hindsight.WebSearch"), &dialog);
 	web_search->setChecked(was_options.web_search);
 	web_search->setToolTip(text("Hindsight.WebSearchNote"));
-	claude_form->addRow(web_search);
+	claude_form->addRow(with_info(web_search, web_search->toolTip(), &dialog));
 
 	// Claude can only fetch pages it found by searching, so this follows
 	// web search.
@@ -746,7 +835,7 @@ void open_settings_dialog(void *)
 	web_fetch->setChecked(was_options.web_fetch);
 	web_fetch->setToolTip(text("Hindsight.WebFetchNote"));
 	web_fetch->setEnabled(was_options.web_search);
-	claude_form->addRow(web_fetch);
+	claude_form->addRow(with_info(web_fetch, web_fetch->toolTip(), &dialog));
 	QObject::connect(web_search, &QCheckBox::toggled, web_fetch, &QCheckBox::setEnabled);
 
 	// More: the update check setting and the saved clips.
@@ -760,7 +849,7 @@ void open_settings_dialog(void *)
 	auto *check_updates = new QCheckBox(text("Hindsight.CheckForUpdates"), &dialog);
 	check_updates->setChecked(was_checking);
 	check_updates->setToolTip(text("Hindsight.CheckForUpdatesNote"));
-	more->addWidget(check_updates);
+	more->addWidget(with_info(check_updates, check_updates->toolTip(), &dialog));
 
 	// Deleting clips happens at once, not on Save: it has nothing to undo.
 	auto *clips_line = new QHBoxLayout();
@@ -834,7 +923,18 @@ void open_settings_dialog(void *)
 			plugin_settings_set_claude_options(options);
 		const bool discord_saved = (typed_user_id == was_user_id && use_own_bot == was_own_bot) ||
 					   plugin_settings_set_discord(typed_user_id, use_own_bot);
-		const bool keys_saved = secret_store_save_typed(typed);
+		// An emptied box removes its key; secret_store_save_typed keeps a
+		// saved key when its box is blank.
+		const Secrets was_keys = secret_store_get();
+		bool keys_saved = secret_store_save_typed(typed);
+		std::vector<const KeyRow *> rows = {&claude, &discord};
+#ifdef HINDSIGHT_ACCESS_CODES
+		rows.push_back(&code);
+#endif
+		for (const KeyRow *row : rows)
+			if (clean_key(row->edit->text().toStdString()).empty() &&
+			    !saved_key(was_keys, row->key).empty())
+				keys_saved = secret_store_forget(row->key) && keys_saved;
 		if (!setting_saved || !options_saved || !discord_saved || !keys_saved) {
 			error->setText(text("Hindsight.SaveFailed"));
 			error->show();
@@ -857,14 +957,11 @@ void open_settings_dialog(void *)
 			return;
 		error->hide();
 		const Secrets now = secret_store_get();
-		claude.edit->clear();
-		show_saved_state(claude, !now.claude_api_key.empty());
+		show_saved_state(claude, now);
 #ifdef HINDSIGHT_ACCESS_CODES
-		code.edit->clear();
-		show_saved_state(code, !now.hindsight_code.empty());
+		show_saved_state(code, now);
 #endif
-		discord.edit->clear();
-		show_saved_state(discord, !now.discord_bot_token.empty());
+		show_saved_state(discord, now);
 #ifdef HINDSIGHT_ACCESS_CODES
 		show_delivery();
 #endif
