@@ -19,12 +19,15 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #pragma once
 
 #include "claude-answer.hpp"
+#include "claude-route.hpp"
 
 #include <atomic>
 #include <string>
 
 // Sends the transcript to Claude with the streamer's own API key and the
-// model and web search they chose, and waits for the answer. Blocks for up to a minute, so call it off the audio and UI
+// model and web search they chose, and waits for the answer. With
+// options.auto_model, a quick request first picks the model; if it fails,
+// the default model answers. Blocks for up to a minute, so call it off the audio and UI
 // threads. Setting cancel (say, while OBS closes) stops it within a second or
 // so, returning a failed answer with error_type "cancelled". curl must already
 // be started with curl_global_init.

@@ -50,6 +50,9 @@ constexpr size_t kMaxAnswerCharacters = 1700;
 
 // What the streamer chose in Hindsight settings.
 struct ClaudeOptions {
+	// Let Hindsight pick the model for each question (claude-route.hpp);
+	// model is used only when this is off.
+	bool auto_model = true;
 	std::string model = kDefaultClaudeModel.id; // a ClaudeModel id
 	bool web_search = true;
 };
@@ -110,6 +113,11 @@ struct ClaudeAnswer {
 	// Web searches the request was billed for. Search results Claude read are
 	// already counted in input_tokens.
 	long long web_searches = 0;
+
+	// Set by ask_claude: the model that answered, and what picking it cost
+	// when the model was picked automatically.
+	std::string model;
+	double routing_dollars = 0;
 };
 
 // What a request to model cost in US dollars, at its list prices

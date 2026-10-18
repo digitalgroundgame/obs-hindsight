@@ -116,18 +116,26 @@ bool never_sent(CURLcode result)
 	return result == CURLE_COULDNT_RESOLVE_HOST || result == CURLE_COULDNT_CONNECT;
 }
 
-// Sends one request on curl, which the caller reuses so a resumed turn goes
+struct Reply {
+	CURLcode result = CURLE_OK;
+	long status = 0;
+	std::string body;
+	std::string took; // timings(), for the log
+};
+
+// Sends one request on curl, which the caller reuses so later requests go
 // out on the connection that is already open. number counts the requests for
 // the log.
-ClaudeAnswer send(CURL *curl, int number, const std::string &request, const std::string &api_key,
-		  const std::atomic<bool> &cancel)
+Reply post(CURL *curl, int number, const std::string &request, const std::string &api_key,
+	   const std::atomic<bool> &cancel)
 {
 	curl_slist *headers = nullptr;
 	headers = curl_slist_append(headers, "content-type: application/json");
 	headers = curl_slist_append(headers, (std::string("anthropic-version: ") + kClaudeApiVersion).c_str());
 	headers = curl_slist_append(headers, ("x-api-key: " + api_key).c_str());
 	const std::string user_agent = std::string("obs-hindsight/") + PLUGIN_VERSION;
-	std::string body;
+	Reply reply;
+	std::string &body = reply.body;
 
 	curl_easy_setopt(curl, CURLOPT_URL, kClaudeMessagesUrl);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -142,7 +150,8 @@ ClaudeAnswer send(CURL *curl, int number, const std::string &request, const std:
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 	curl_easy_setopt(curl, CURLOPT_TIMEOUT, kRequestTimeoutSeconds);
 
-	CURLcode result = curl_easy_perform(curl);
+	CURLcode &result = reply.result;
+	result = curl_easy_perform(curl);
 	if (result != CURLE_OK && !cancel.load() && never_sent(result)) {
 		obs_log(LOG_WARNING, "Claude request %d couldn't connect after %s: %s; trying once more", number,
 			timings(curl).c_str(), curl_easy_strerror(result));
@@ -151,23 +160,33 @@ ClaudeAnswer send(CURL *curl, int number, const std::string &request, const std:
 		// below cover only this second attempt; the first is in the line above.
 		result = curl_easy_perform(curl);
 	}
-	long status = 0;
-	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-	const std::string took = timings(curl);
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &reply.status);
+	reply.took = timings(curl);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, nullptr);
 	curl_slist_free_all(headers);
-
-	if (cancel.load())
-		return failed("cancelled", {});
-	if (result != CURLE_OK) {
+	if (result != CURLE_OK && !cancel.load()) {
 		curl_off_t uploaded = 0;
 		curl_easy_getinfo(curl, CURLINFO_SIZE_UPLOAD_T, &uploaded);
 		obs_log(LOG_WARNING, "Claude request %d failed after %s, %lld of %zu bytes sent: %s", number,
-			took.c_str(), static_cast<long long>(uploaded), request.size(), curl_easy_strerror(result));
-		return failed("network", curl_easy_strerror(result));
+			reply.took.c_str(), static_cast<long long>(uploaded), request.size(),
+			curl_easy_strerror(result));
 	}
+	return reply;
+}
 
-	ClaudeAnswer answer = parse_claude_response(status, body);
+// Sends one answer request (see post) and reads the reply.
+ClaudeAnswer send(CURL *curl, int number, const std::string &request, const std::string &api_key,
+		  const std::atomic<bool> &cancel)
+{
+	const Reply reply = post(curl, number, request, api_key, cancel);
+	const long status = reply.status;
+	const std::string &took = reply.took;
+	if (cancel.load())
+		return failed("cancelled", {});
+	if (reply.result != CURLE_OK)
+		return failed("network", curl_easy_strerror(reply.result));
+
+	ClaudeAnswer answer = parse_claude_response(status, reply.body);
 	if (answer.outcome == ClaudeAnswer::Outcome::failed)
 		obs_log(LOG_WARNING, "Claude request %d failed (HTTP %ld, %s) after %s: %s", number, status,
 			answer.error_type.c_str(), took.c_str(), answer.error_message.c_str());
@@ -188,7 +207,30 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 
 	const std::string now = local_time_text();
 	int requests = 1;
-	ClaudeAnswer answer = send(curl, requests, build_claude_request(transcript, now, options), api_key, cancel);
+	ClaudeOptions chosen = options;
+	double routing_dollars = 0;
+	if (options.auto_model) {
+		// Also opens the connection the answer then goes out on.
+		const Reply reply = post(curl, requests++, build_route_request(transcript), api_key, cancel);
+		if (cancel.load()) {
+			curl_easy_cleanup(curl);
+			return failed("cancelled", {});
+		}
+		const ClaudeRoute route = reply.result == CURLE_OK ? parse_route_response(reply.status, reply.body)
+								   : ClaudeRoute{};
+		routing_dollars =
+			claude_cost_dollars(claude_model(kRouteModel), route.input_tokens, route.output_tokens, 0);
+		if (route.ok) {
+			chosen.model = route.model;
+			obs_log(LOG_INFO, "picked %s to answer (%s, $%.5f)", route.model.c_str(), reply.took.c_str(),
+				routing_dollars);
+		} else {
+			chosen.model = kDefaultClaudeModel.id;
+			obs_log(LOG_WARNING, "couldn't pick a model (HTTP %ld, %s); answering with %s", reply.status,
+				route.error_type.empty() ? "network" : route.error_type.c_str(), chosen.model.c_str());
+		}
+	}
+	ClaudeAnswer answer = send(curl, requests, build_claude_request(transcript, now, chosen), api_key, cancel);
 	long long input_tokens = answer.input_tokens;
 	long long output_tokens = answer.output_tokens;
 	long long web_searches = answer.web_searches;
@@ -198,7 +240,7 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 		if (searches_left <= 0)
 			break;
 		answer = send(curl, ++requests,
-			      build_claude_request(transcript, now, options, answer.paused_content,
+			      build_claude_request(transcript, now, chosen, answer.paused_content,
 						   static_cast<int>(searches_left)),
 			      api_key, cancel);
 		input_tokens += answer.input_tokens;
@@ -214,5 +256,7 @@ ClaudeAnswer ask_claude(const std::string &transcript, const std::string &api_ke
 	answer.input_tokens = input_tokens;
 	answer.output_tokens = output_tokens;
 	answer.web_searches = web_searches;
+	answer.model = claude_model(chosen.model).id;
+	answer.routing_dollars = routing_dollars;
 	return answer;
 }

@@ -89,6 +89,7 @@ set(
   audio-ring-test
   claude-answer-test
   claude-models-test
+  claude-route-test
   clip-cleanup-test
   clip-file-test
   connect-api-test

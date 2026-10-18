@@ -86,8 +86,11 @@ Discord DMs, and writes them to the OBS log.
    **Save**. Create the key on the
    [API keys](https://platform.claude.com/settings/keys) page of the Claude
    Console with a workspace selected; a key without a workspace is rejected.
-   Under **Claude**, pick the model that answers (Haiku, the default, is the
-   fastest and cheapest) and whether Claude may search the web. With **Search
+   Under **Claude**, **Pick the model automatically** (on by default) has
+   Claude Haiku check each question first: quick facts stay on Haiku, the
+   fastest and cheapest, and harder questions go to Claude Sonnet. Turn it
+   off to choose the model yourself. You can also choose whether Claude may
+   search the web. With **Search
    the web for current information** on (the default), Claude looks up
    current events (up to three searches a question, at $0.01 each on your
    key), so keep web search turned on under

@@ -13,6 +13,8 @@ set(
   "${CMAKE_CURRENT_LIST_DIR}/claude-answer.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/claude-models.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/claude-models.hpp"
+  "${CMAKE_CURRENT_LIST_DIR}/claude-route.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/claude-route.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-cleanup.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-cleanup.hpp"
   "${CMAKE_CURRENT_LIST_DIR}/clip-file.cpp"

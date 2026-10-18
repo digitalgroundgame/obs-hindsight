@@ -568,6 +568,11 @@ void open_settings_dialog(void *)
 	layout->addWidget(claude_box);
 
 	ClaudeOptions was_options = plugin_settings_claude_options();
+	auto *auto_model = new QCheckBox(text("Hindsight.AutoModel"), &dialog);
+	auto_model->setChecked(was_options.auto_model);
+	auto_model->setToolTip(text("Hindsight.AutoModelNote"));
+	claude_form->addRow(auto_model);
+
 	auto *model = new QComboBox(&dialog);
 	for (const ClaudeModel &choice : kClaudeModels) {
 		model->addItem(QString::fromUtf8(choice.label), QString::fromUtf8(choice.id));
@@ -580,6 +585,10 @@ void open_settings_dialog(void *)
 	model->setCurrentIndex(model->findData(QString::fromUtf8(was_options.model.c_str())));
 	model->setToolTip(text("Hindsight.ClaudeModelNote"));
 	claude_form->addRow(text("Hindsight.ClaudeModel"), model);
+	// The dropdown is only for picking the model by hand.
+	claude_form->setRowVisible(model, !was_options.auto_model);
+	QObject::connect(auto_model, &QCheckBox::toggled, &dialog,
+			 [claude_form, model](bool on) { claude_form->setRowVisible(model, !on); });
 
 	auto *web_search = new QCheckBox(text("Hindsight.WebSearch"), &dialog);
 	web_search->setChecked(was_options.web_search);
@@ -635,6 +644,7 @@ void open_settings_dialog(void *)
 		typed.claude_api_key = claude.edit->text().toStdString();
 		const bool checking = check_updates->isChecked();
 		ClaudeOptions options;
+		options.auto_model = auto_model->isChecked();
 		options.model = model->currentData().toString().toStdString();
 		options.web_search = web_search->isChecked();
 
@@ -664,7 +674,8 @@ void open_settings_dialog(void *)
 		// so nothing typed is lost.
 		const bool setting_saved = checking == was_checking || plugin_settings_set_check_for_updates(checking);
 		const bool options_saved =
-			(options.model == was_options.model && options.web_search == was_options.web_search) ||
+			(options.auto_model == was_options.auto_model && options.model == was_options.model &&
+			 options.web_search == was_options.web_search) ||
 			plugin_settings_set_claude_options(options);
 		const bool discord_saved = (typed_user_id == was_user_id && use_own_bot == was_own_bot) ||
 					   plugin_settings_set_discord(typed_user_id, use_own_bot);
